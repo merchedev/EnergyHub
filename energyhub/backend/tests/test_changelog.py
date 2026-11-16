@@ -50,11 +50,13 @@ def test_version_comparison() -> None:
 def test_repository_changelog_contains_current_version() -> None:
     path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
     entries = parse_changelog(path.read_text(encoding="utf-8"))
+    assert any(entry.version == "0.2.1" for entry in entries)
     assert any(entry.version == "0.2.0" for entry in entries)
     assert any(entry.version == "0.1.2" for entry in entries)
     assert any(entry.version == "0.1.1" for entry in entries)
     assert any(entry.version == "0.1.0" for entry in entries)
-    assert [entry.version for entry in newer_entries(entries, "0.1.2")] == ["0.2.0"]
+    assert [entry.version for entry in newer_entries(entries, "0.2.0")] == ["0.2.1"]
+    assert [entry.version for entry in newer_entries(entries, "0.1.2")] == ["0.2.1", "0.2.0"]
 
 
 async def test_supervisor_changelog_filters_installed_version(monkeypatch) -> None:

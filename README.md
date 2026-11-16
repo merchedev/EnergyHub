@@ -89,6 +89,10 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 
 ### Capturas
 
+La ficha de dispositivo permite usar solo el consumo anual de la etiqueta: oculta potencia, ciclo y standby, y muestra la media diaria y la potencia equivalente.
+
+![Ficha de dispositivo con consumo anual](docs/screenshots/device-form.png)
+
 | Resumen | Dispositivos |
 |---|---|
 | ![Resumen](docs/screenshots/dashboard.png) | ![Dispositivos](docs/screenshots/devices.png) |

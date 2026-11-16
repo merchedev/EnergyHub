@@ -149,8 +149,8 @@ def _estimate_one(
     device: Device,
     year: int,
     month: int,
-) -> tuple[TariffPrice | None, prices.PriceCurve, estimation.DeviceEstimate]:
-    price, _fallback = _price_for(db, contract, year, month)
+) -> tuple[TariffPrice | None, prices.PriceCurve, estimation.DeviceEstimate, bool]:
+    price, is_fallback = _price_for(db, contract, year, month)
     curve = (
         prices.build_month_curve(db, contract, price, year, month)
         if price is not None
@@ -164,7 +164,7 @@ def _estimate_one(
         month,
         tariff.calibration_factor(db, contract),
     )
-    return price, curve, est
+    return price, curve, est, is_fallback
 
 
 def _curve_cheap_windows(
@@ -783,7 +783,7 @@ def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> d
     contract = _contract_or_404(db)
     year, month_number = _month(payload.month, contract)
     device = _device_from_payload(payload.device)
-    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
+    price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
     return {
         "energy_kwh": est.energy_kwh,
         "active_kwh": est.active_kwh,
@@ -795,6 +795,12 @@ def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> d
         "periods": est.period_rows(price),
         "typical_windows": estimation.device_windows(device),
         "notes": est.notes,
+        "price_available": price is not None,
+        "price_is_fallback": _fallback if price is not None else False,
+        "price_month": f"{year:04d}-{month_number:02d}",
+        "price_month_label": periods.month_label_es(year, month_number),
+        "price_source": price.source if price is not None else None,
+        "currency": contract.currency,
     }
 
 
@@ -807,7 +813,7 @@ def create_device(payload: DeviceIn, db: Session = Depends(get_db)) -> dict:
     db.commit()
     db.refresh(device)
     year, month_number = _month(None, contract)
-    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
+    price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
     return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
 
 
@@ -821,7 +827,7 @@ def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_d
     db.commit()
     db.refresh(device)
     year, month_number = _month(None, contract)
-    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
+    price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
     return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
 
 

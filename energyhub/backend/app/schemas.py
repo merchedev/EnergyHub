@@ -168,6 +168,12 @@ class DevicePreviewOut(BaseModel):
     periods: list[PeriodEstimateOut]
     typical_windows: list[WindowIn] = []
     notes: list[str] = []
+    price_available: bool = False
+    price_is_fallback: bool = False
+    price_month: str | None = None
+    price_month_label: str | None = None
+    price_source: str | None = None
+    currency: str = "EUR"
 
 
 class CalibrationIn(BaseModel):

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
+  ArrowRight,
   Clock3,
   Github,
+  Info,
   Plug,
   Radio,
   Repeat2,
@@ -118,6 +121,7 @@ export function DeviceForm({
   onSaved: () => Promise<void>
 }) {
   const { showToast } = useToast()
+  const navigate = useNavigate()
   const [form, setForm] = useState<DeviceInput>(EMPTY)
   const [preview, setPreview] = useState<DevicePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -131,6 +135,9 @@ export function DeviceForm({
     () => catalog.find((item) => item.id === form.category) ?? catalog.find((item) => item.id === 'other'),
     [catalog, form.category],
   )
+  const annualKwh = Number(form.annual_kwh ?? 0)
+  const annualOnly = form.mode === 'always_on' && annualKwh > 0
+  const averageAnnualW = annualKwh > 0 ? (annualKwh * 1000) / 8760 : 0
 
   useEffect(() => {
     if (!open) return
@@ -249,6 +256,7 @@ export function DeviceForm({
 
   const typicalWindows: Window[] = (form.typical_windows as Window[] | null | undefined) ?? selectedCatalog?.typical_windows ?? []
   const confidenceTone = preview?.confidence === 'alta' ? 'green' : preview?.confidence === 'media' ? 'yellow' : 'red'
+  const previewHasPrice = preview?.price_available !== false
 
   return (
     <Modal
@@ -317,58 +325,94 @@ export function DeviceForm({
           </Field>
 
           {form.mode === 'always_on' ? (
-            <div className="banner">
-              <Plug size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>
-                Para nevera, router o standby. Si conoces el <strong>consumo anual</strong> de la etiqueta,
-                es lo más preciso. Si no, usa potencia y ciclo de trabajo.
-              </span>
-            </div>
-          ) : null}
-
-          {form.mode === 'always_on' ? (
-            <div className="form-grid">
-              <Field label="Potencia activa (W)" hint={`${watts(form.power_active_w)} cuando funciona`}>
-                <Input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={form.power_active_w}
-                  onChange={(event) => update('power_active_w', Number(event.target.value))}
-                />
-              </Field>
-              <Field label="Ciclo de trabajo (%)" hint="Nevera: 30–40 %. Router: 100 %.">
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={form.duty_cycle_pct}
-                  onChange={(event) => update('duty_cycle_pct', Number(event.target.value))}
-                />
-              </Field>
-              <Field label="Standby (W)" hint="Consumo cuando el aparato está en reposo.">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={form.power_standby_w}
-                  onChange={(event) => update('power_standby_w', Number(event.target.value))}
-                />
-              </Field>
-              <Field label="Consumo anual (kWh)" hint="Opcional. Si lo rellenas, manda sobre el ciclo.">
+            <>
+              <div className="banner">
+                <Plug size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  Para nevera, router o standby. Si conoces el <strong>consumo anual</strong> de la
+                  etiqueta, es el único dato necesario. Si no, usa potencia y ciclo de trabajo.
+                </span>
+              </div>
+              <Field
+                label="Consumo anual (kWh)"
+                hint="Etiqueta energética. Si lo rellenas, no necesitas potencia ni ciclo de trabajo."
+              >
                 <Input
                   type="number"
                   min="0"
                   step="1"
                   value={form.annual_kwh ?? ''}
-                  placeholder="Ej. 200"
+                  placeholder="Ej. 257"
                   onChange={(event) =>
                     update('annual_kwh', event.target.value === '' ? null : Number(event.target.value))
                   }
                 />
               </Field>
-            </div>
+              {annualOnly ? (
+                <div className="annual-summary">
+                  <div className="between" style={{ alignItems: 'flex-start', gap: 12 }}>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 2 }}>
+                        <Wand2 size={11} /> Cálculo por etiqueta
+                      </div>
+                      <div className="small muted">
+                        Repartimos el consumo anual entre las 24 h del día.
+                      </div>
+                    </div>
+                    <Badge tone="green">{kwh(annualKwh, 0)}/año</Badge>
+                  </div>
+                  <div className="annual-summary-grid">
+                    <div className="annual-summary-metric">
+                      <span className="small muted">Media diaria</span>
+                      <strong>{kwh(annualKwh / 365, 2)}</strong>
+                    </div>
+                    <div className="annual-summary-metric">
+                      <span className="small muted">Potencia media</span>
+                      <strong>{watts(averageAnnualW)}</strong>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => update('annual_kwh', null)}
+                  >
+                    Calcular con potencia y ciclo <ArrowRight size={13} />
+                  </Button>
+                </div>
+              ) : (
+                <div className="form-grid">
+                  <Field label="Potencia activa (W)" hint={`${watts(form.power_active_w)} cuando funciona`}>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={form.power_active_w}
+                      onChange={(event) => update('power_active_w', Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="Ciclo de trabajo (%)" hint="Nevera: 30–40 %. Router: 100 %.">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={form.duty_cycle_pct}
+                      onChange={(event) => update('duty_cycle_pct', Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="Standby (W)" hint="Consumo cuando el aparato está en reposo.">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={form.power_standby_w}
+                      onChange={(event) => update('power_standby_w', Number(event.target.value))}
+                    />
+                  </Field>
+                </div>
+              )}
+            </>
           ) : null}
 
           {form.mode === 'hours_per_day' ? (
@@ -598,8 +642,36 @@ export function DeviceForm({
               </div>
               <div className="between">
                 <span className="small muted">Coste energía</span>
-                <strong>{eur(preview.cost_eur)}</strong>
+                <strong>{previewHasPrice ? eur(preview.cost_eur) : '—'}</strong>
               </div>
+              {!previewHasPrice ? (
+                <>
+                  <div className="banner warning">
+                    <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <strong>Sin precio confirmado.</strong> No hay tarifa válida para{' '}
+                      {preview.price_month_label ?? 'este mes'}. El consumo se calcula, pero el coste
+                      aparecerá cuando confirmes los precios.
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      onClose()
+                      navigate('/tariff')
+                    }}
+                  >
+                    Ir a Tarifa <ArrowRight size={13} />
+                  </Button>
+                </>
+              ) : preview.price_is_fallback ? (
+                <div className="small muted">
+                  Coste con precios provisionales. Confirma la tarifa para ajustarlo.
+                </div>
+              ) : null}
               {preview.energy_kwh > 0 ? (
                 <div>
                   <div className="between small" style={{ marginBottom: 6 }}>
@@ -657,9 +729,11 @@ export function DeviceForm({
           {!preview && !previewError ? <div className="spinner" style={{ width: 18, height: 18 }} /> : null}
 
           <div className="small muted" style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-            {form.mode === 'always_on'
-              ? 'Repartimos el consumo entre las 24 h y aplicamos el precio de cada tramo.'
-              : 'Repartimos las horas según la franja típica de la categoría. El rango muestra el mínimo en valle y el máximo en punta.'}
+            {annualOnly
+              ? 'Repartimos el consumo anual de la etiqueta entre las 24 h y aplicamos el precio de cada tramo.'
+              : form.mode === 'always_on'
+                ? 'Repartimos el consumo entre las 24 h y aplicamos el precio de cada tramo.'
+                : 'Repartimos las horas según la franja típica de la categoría. El rango muestra el mínimo en valle y el máximo en punta.'}
           </div>
         </div>
       </div>

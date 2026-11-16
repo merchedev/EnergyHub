@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-11-16
+
+- La ficha de dispositivo oculta potencia, ciclo de trabajo y standby cuando usas el consumo anual.
+- Resumen del consumo anual: media diaria y potencia media equivalente.
+- La vista previa avisa si no hay precio confirmado y muestra el coste como «—» en lugar de 0 €.
+- Acceso directo a Tarifa desde la vista previa para confirmar o actualizar precios.
+- Tests de la vista previa sin precios y del cálculo por consumo anual.
+
 ## 0.2.0 - 2026-11-16
 
 - Selector de compañía y tarifa con perfiles: Pepe Variable, Pepe Estable, PVPC y catálogo comunitario/manual.

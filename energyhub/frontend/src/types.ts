@@ -280,6 +280,12 @@ export interface DevicePreview {
   periods: Array<{ id: PeriodId; name: string; price: number; energy_kwh: number; cost_eur: number }>
   typical_windows: Window[]
   notes: string[]
+  price_available: boolean
+  price_is_fallback: boolean
+  price_month: string | null
+  price_month_label: string | null
+  price_source: string | null
+  currency: string
 }
 
 export interface DeviceSummary {
