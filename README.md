@@ -99,7 +99,7 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 
 Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura y recomendaciones está probado con la API real de Pepe y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. El comparador completo Pepe vs PVPC/ESIOS, los sensores nativos y el soporte multi-país llegarán en siguientes fases.
 
-El Dockerfile y la estructura de app están incluidos. En el entorno de desarrollo de este repositorio no había Docker instalado, así que la compilación de la imagen se validará al instalar la app en Home Assistant; el build del frontend, el backend y el servido estático sí están probados.
+El Dockerfile y la estructura de app están incluidos. La imagen se compila correctamente en CI (GitHub Actions); la instalación real en HA OS queda por validar en tu instalación.
 
 ## Licencia
 
