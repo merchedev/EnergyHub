@@ -91,6 +91,10 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 |---|---|
 | ![Factura](docs/screenshots/bill.png) | ![Horarios](docs/screenshots/schedule.png) |
 
+| Recomendaciones | Novedades |
+|---|---|
+| ![Recomendaciones](docs/screenshots/recommendations.png) | ![Novedades](docs/screenshots/changelog.png) |
+
 ## Estado del proyecto
 
 Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura y recomendaciones está probado con la API real de Pepe y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. El comparador completo Pepe vs PVPC/ESIOS, los sensores nativos y el soporte multi-país llegarán en siguientes fases.

@@ -34,6 +34,7 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 - **Precios por tramo**: la Tarifa Variable de Pepe publica precios mensuales de punta, llano y valle. No se usa el precio horario de ESIOS para calcular esa factura.
 - **ESIOS**: se integra como referencia de mercado y queda preparado para el comparador PVPC y las tarifas horarias.
 - **Open source**: licencia MIT, i18n preparada, catálogo y proveedores ampliables. Repositorio: [github.com/merchedev/EnergyHub](https://github.com/merchedev/EnergyHub).
+- **Novedades**: la app consulta `GET /addons/self/info` y `GET /store/addons/<slug>/changelog` del Supervisor. Filtra las entradas por la versión instalada y solo muestra las posteriores; si el Supervisor no está disponible, usa GitHub y, como último recurso, el `CHANGELOG.md` incluido en la imagen.
 
 ## Backend
 

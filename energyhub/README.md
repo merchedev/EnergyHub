@@ -20,3 +20,4 @@ La app guarda los datos en `/data` y funciona dentro de Home Assistant con Ingre
 - Pepe publica el precio del mes pasado; la app lo marca como provisional hasta que se confirme el mes actual.
 - El comparador completo con PVPC/ESIOS llegará en una fase posterior. En esta versión, ESIOS solo se muestra como referencia de mercado.
 - Las estimaciones son orientativas y no sustituyen a la factura oficial.
+- La página **Novedades** muestra únicamente las versiones posteriores a la instalada. El changelog completo está en el repositorio.
