@@ -1,0 +1,107 @@
+{
+  "E_SALE_INDEXED_COST_TELCO_DISCOUNT_ATR_2024_06": {
+    "canaryIslandVatTaxRate": 0.03,
+    "electricityTaxRate": 0.0511269632,
+    "electricityTaxRateWithPossibleReduction": 0.0511269632,
+    "energyPrices": [
+      0.404644,
+      0.318715,
+      0.283266
+    ],
+    "energyPricesCanaryIslandsPrimaryResidenceTaxIncluded": [
+      0.425332,
+      0.33501,
+      0.297749
+    ],
+    "energyPricesCanaryIslandsTaxIncluded": [
+      0.438092,
+      0.34506,
+      0.306681
+    ],
+    "energyPricesTaxIncluded": [
+      0.514652,
+      0.405362,
+      0.360276
+    ],
+    "energyPricesTaxIncludedWithPossibleReductions": [
+      0.514652,
+      0.405362,
+      0.360276
+    ],
+    "energyPriceAverage": 0.32282724,
+    "energyPriceAverageCanaryIslandsPrimaryResidenceTaxIncluded": 0.33933261,
+    "energyPriceAverageCanaryIslandsTaxIncluded": 0.34951229,
+    "energyPriceAverageTaxIncluded": 0.41059236,
+    "energyPriceAverageTaxIncludedWithPossibleReductions": 0.41059236,
+    "generalVatTaxRate": 0.21,
+    "generalVatTaxRateWithPossibleReduction": 0.21,
+    "name": "Precio variable",
+    "kind": "variable",
+    "lastUpdatedMonthName": "Octubre 2026",
+    "powerPrices": [
+      0.075903,
+      0.001987
+    ],
+    "powerPricesMonthly": [
+      2.308701,
+      0.060452
+    ],
+    "powerPricesCanaryIslandsPrimaryResidenceTaxIncluded": [
+      0.079784,
+      0.002089
+    ],
+    "powerPricesCanaryIslandsPrimaryResidenceTaxIncludedMonthly": [
+      2.426738,
+      0.063543
+    ],
+    "powerPricesCanaryIslandsTaxIncluded": [
+      0.082177,
+      0.002152
+    ],
+    "powerPricesCanaryIslandsTaxIncludedMonthly": [
+      2.49954,
+      0.065449
+    ],
+    "powerPricesTaxIncluded": [
+      0.096539,
+      0.002527
+    ],
+    "powerPricesTaxIncludedMonthly": [
+      2.936353,
+      0.076887
+    ],
+    "powerPricesTaxIncludedWithPossibleReductions": [
+      0.096539,
+      0.002527
+    ],
+    "powerPricesTaxIncludedWithPossibleReductionsMonthly": [
+      2.936353,
+      0.076887
+    ],
+    "selfConsumption": [
+      0.082909,
+      0.082909,
+      0.082909
+    ],
+    "selfConsumptionLastUpdatedMonthName": "Octubre 2026",
+    "serviceFeePrice": 3.142,
+    "serviceFeePriceTaxIncluded": 3.996196,
+    "serviceFeePriceCanaryIslandsPrimaryResidenceTaxIncluded": 3.302641,
+    "serviceFeePriceCanaryIslandsTaxIncluded": 3.40172,
+    "serviceFeePriceTaxIncludedWithPossibleReductions": 3.996196,
+    "socialBond": {
+      "serviceFeePrice": 0.750941,
+      "serviceFeePriceTaxIncluded": 0.908639,
+      "serviceFeePriceTaxIncludedWithPossibleReductions": 0.908639,
+      "serviceFeePriceCanaryIslandsPrimaryResidenceTaxIncluded": 0.750941,
+      "serviceFeePriceCanaryIslandsTaxIncluded": 0.773469
+    },
+    "telcoDiscountElectricityValue": 4.132,
+    "telcoDiscountElectricityValueTaxIncluded": 4.99972,
+    "telcoDiscountGasValue": 2.48,
+    "telcoDiscountGasValueTaxIncluded": 3.0008,
+    "type": "electricity",
+    "variant": "E_SALE_INDEXED_COST_TELCO_DISCOUNT_ATR",
+    "hasPowerMargin": false
+  }
+}

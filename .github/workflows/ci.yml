@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r energyhub/backend/requirements-dev.txt
+      - name: Tests
+        working-directory: energyhub/backend
+        run: pytest
+      - name: Ruff
+        working-directory: energyhub/backend
+        run: ruff check app tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: energyhub/frontend/package-lock.json
+      - name: Instalar dependencias
+        working-directory: energyhub/frontend
+        run: npm ci
+      - name: Build
+        working-directory: energyhub/frontend
+        run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Construir imagen de la app
+        uses: docker/build-push-action@v6
+        with:
+          context: ./energyhub
+          push: false
+          tags: energyhub:ci
