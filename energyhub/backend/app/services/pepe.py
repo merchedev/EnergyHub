@@ -39,7 +39,11 @@ def _to_float(value: Any, fallback: float = 0.0) -> float:
         return fallback
 
 
-def parse_pepe_payload(payload: dict[str, Any], fetched_at: datetime | None = None) -> PepeOffer:
+def parse_pepe_payload(
+    payload: dict[str, Any],
+    fetched_at: datetime | None = None,
+    kind: str = "variable",
+) -> PepeOffer:
     if not isinstance(payload, dict):
         raise PepeFetchError("La respuesta de Pepe no es un objeto JSON válido")
 
@@ -51,20 +55,28 @@ def parse_pepe_payload(payload: dict[str, Any], fetched_at: datetime | None = No
             for value in payload.values()
             if isinstance(value, dict)
             and value.get("type") == "electricity"
-            and value.get("kind") == "variable"
+            and value.get("kind") == kind
         ]
         if not candidates:
-            raise PepeFetchError("No se ha encontrado la tarifa variable de Pepe en la respuesta")
-        indexed = [item for item in candidates if "INDEXED" in str(item.get("variant", "")).upper()]
-        offer = (indexed or candidates)[0]
+            raise PepeFetchError(f"No se ha encontrado la tarifa {kind} de Pepe en la respuesta")
+        if kind == "variable":
+            indexed = [item for item in candidates if "INDEXED" in str(item.get("variant", "")).upper()]
+            offer = (indexed or candidates)[0]
+        else:
+            fixed = [item for item in candidates if "FIXED" in str(item.get("variant", "")).upper()]
+            offer = (fixed or candidates)[0]
 
     energy_prices = offer.get("energyPrices") or []
-    if not isinstance(energy_prices, list) or len(energy_prices) < 3:
-        raise PepeFetchError("La respuesta de Pepe no incluye los tres precios de energía")
-
-    p1 = _to_float(energy_prices[0])
-    p2 = _to_float(energy_prices[1])
-    p3 = _to_float(energy_prices[2])
+    if not isinstance(energy_prices, list) or not energy_prices:
+        raise PepeFetchError("La respuesta de Pepe no incluye precios de energía")
+    if len(energy_prices) < 3:
+        # Tarifa de precio fijo: un único precio para todas las horas.
+        fixed_price = _to_float(energy_prices[0])
+        p1 = p2 = p3 = fixed_price
+    else:
+        p1 = _to_float(energy_prices[0])
+        p2 = _to_float(energy_prices[1])
+        p3 = _to_float(energy_prices[2])
     if min(p1, p2, p3) <= 0:
         raise PepeFetchError("Los precios de energía recibidos no son válidos")
 
@@ -103,7 +115,7 @@ def parse_pepe_payload(payload: dict[str, Any], fetched_at: datetime | None = No
     )
 
 
-async def fetch_pepe_last_month() -> PepeOffer:
+async def fetch_pepe_last_month(kind: str = "variable") -> PepeOffer:
     headers = {
         "Accept": "application/json",
         "Accept-Language": "es",
@@ -121,4 +133,4 @@ async def fetch_pepe_last_month() -> PepeOffer:
     except ValueError as exc:
         raise PepeFetchError("La API de Pepe no ha devuelto JSON válido") from exc
 
-    return parse_pepe_payload(payload)
+    return parse_pepe_payload(payload, kind=kind)

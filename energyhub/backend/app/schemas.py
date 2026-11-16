@@ -12,6 +12,7 @@ class ContractIn(BaseModel):
     region: str | None = Field(default=None, max_length=8)
     timezone: str = Field(default="Europe/Madrid", max_length=64)
     tariff_type: str = Field(default="pepe_variable", max_length=40)
+    tariff_profile_id: str = Field(default="pepe_variable", max_length=60)
     access_toll: str = Field(default="2.0TD", max_length=20)
     segment: str | None = Field(default="1", max_length=20)
     power_p1_kw: float = Field(default=4.6, ge=0, le=100)
@@ -22,6 +23,9 @@ class ContractIn(BaseModel):
     other_fees_eur_month: float = Field(default=0.0, ge=0)
     vat_rate: float = Field(default=0.21, ge=0, le=1)
     electricity_tax_rate: float = Field(default=0.0511269632, ge=0, le=1)
+    has_pepephone_discount: bool = False
+    bono_social_category: str = Field(default="none", pattern=r"^(none|vulnerable|severe|exclusion)$")
+    bono_social_energy_limit_kwh: float = Field(default=1587.0, ge=0)
     currency: str = Field(default="EUR", min_length=3, max_length=3)
     billing_day: int = Field(default=1, ge=1, le=28)
     notes: str | None = None
@@ -193,6 +197,20 @@ class SettingsUpdate(BaseModel):
     esios_entity_id: str | None = Field(default=None, max_length=160)
     language: str | None = Field(default=None, max_length=8)
     theme: str | None = Field(default=None, max_length=16)
+
+
+class ComparatorOut(BaseModel):
+    month: str
+    current_total: float
+    alternative_total: float
+    savings_eur_month: float
+    current_label: str
+    alternative_label: str
+    current_energy_cost: float
+    alternative_energy_cost: float
+    pvpc_available: bool
+    missing_hours: int
+    notes: list[str] = []
 
 
 class RecommendationOut(BaseModel):

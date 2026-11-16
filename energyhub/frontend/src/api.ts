@@ -3,6 +3,7 @@ import type {
   CalendarResponse,
   CatalogItem,
   ChangelogResponse,
+  ComparatorResponse,
   Contract,
   Dashboard,
   Device,
@@ -10,10 +11,13 @@ import type {
   DevicePreview,
   HaEntity,
   HaStatus,
+  PriceCurve,
   PriceInfo,
   PriceProposal,
   Recommendation,
   Calibration,
+  TariffProfile,
+  TariffsResponse,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'api'
@@ -53,6 +57,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   bootstrap: () => request<Bootstrap>('/bootstrap'),
   catalog: () => request<{ items: CatalogItem[] }>('/catalog'),
+  tariffs: () => request<TariffsResponse>('/tariffs'),
   changelog: () => request<ChangelogResponse>('/changelog'),
   contract: () => request<{ contract: Contract | null }>('/contract'),
   saveContract: (payload: Partial<Contract>) =>
@@ -60,16 +65,35 @@ export const api = {
   currentTariff: (month?: string) =>
     request<{
       contract: Contract
+      profile: TariffProfile
       month: string
       month_label: string
       days: number
       price: PriceInfo | null
       periods: Array<{ id: string; name: string; price: number }>
       fixed: DashFixed | null
+      price_mode: 'hourly' | 'period'
       calibration_factor: number
       calibration: Calibration | null
     }>(`/tariff/current${month ? `?month=${month}` : ''}`),
   calendar: (days = 7) => request<CalendarResponse>(`/tariff/calendar?days=${days}`),
+  hourly: (days = 2, duration = 2) =>
+    request<{
+      profile: TariffProfile
+      price_mode: 'hourly' | 'period'
+      price: PriceInfo | null
+      curve: PriceCurve
+      cheap_windows: Array<{
+        start: string
+        end: string
+        average_price: number
+        hours: number
+        period: string
+        label: string
+      }>
+    }>(`/tariff/hourly?days=${days}&duration=${duration}`),
+  comparator: (month?: string) =>
+    request<ComparatorResponse>(`/comparator${month ? `?month=${month}` : ''}`),
   proposals: () => request<{ items: PriceProposal[] }>('/tariff/proposals'),
   fetchPepe: () =>
     request<{ proposal: PriceProposal; message: string }>('/tariff/pepe/fetch', { method: 'POST' }),
@@ -148,4 +172,17 @@ export interface DashFixed {
   energy_prices: Record<string, number>
   electricity_tax_rate: number
   vat_rate: number
+  energy_cost_original?: number
+  power_cost_original?: number
+  service_fee_original?: number
+  service_discount?: number
+  bono_social_discount?: number
+  bono_social_percentage?: number
+  bono_social_applied?: boolean
+  bono_social_eligible?: boolean
+  by_period?: Record<string, number>
+  cost_by_period?: Record<string, number>
+  price_source?: string
+  missing_hours?: number
+  coverage?: number
 }

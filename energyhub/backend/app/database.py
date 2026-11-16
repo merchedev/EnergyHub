@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import DATABASE_URL
@@ -37,7 +37,33 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _migrate_contracts() -> None:
+    """Migraciones ligeras para no perder los datos de versiones anteriores."""
+    inspector = inspect(engine)
+    if "contracts" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("contracts")}
+    additions = {
+        "tariff_profile_id": "VARCHAR(60) DEFAULT 'pepe_variable'",
+        "has_pepephone_discount": "BOOLEAN DEFAULT 0",
+        "bono_social_category": "VARCHAR(20) DEFAULT 'none'",
+        "bono_social_energy_limit_kwh": "FLOAT DEFAULT 1587",
+    }
+    with engine.begin() as connection:
+        for name, definition in additions.items():
+            if name not in columns:
+                connection.execute(text(f"ALTER TABLE contracts ADD COLUMN {name} {definition}"))
+        if "tariff_profile_id" not in columns:
+            connection.execute(
+                text(
+                    "UPDATE contracts SET tariff_profile_id = 'manual' "
+                    "WHERE lower(provider) NOT LIKE '%pepe%'"
+                )
+            )
+
+
 def init_db() -> None:
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _migrate_contracts()

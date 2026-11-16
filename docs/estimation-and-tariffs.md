@@ -29,6 +29,27 @@ La cuota de servicio y el bono social de Pepe se guardan con impuestos incluidos
 
 Con un contrato de ejemplo (P1 4,6 kW y P2 4,6 kW, precios de octubre de 2026) el término de potencia es de aproximadamente 10,75 €/mes sin impuestos, y el fijo completo con cuotas e impuestos ronda los 19,39 €/mes incluyendo 0,81 € de alquiler de contador.
 
+## PVPC
+
+El PVPC 2.0TD se obtiene de la API pública REData de REE (`apidatos.ree.es`). La serie llega en €/MWh y se convierte a €/kWh. El coste se calcula hora a hora con la curva de consumo estimada del hogar.
+
+- El término de potencia es regulado y editable.
+- El bono social solo se aplica al PVPC.
+- Si faltan horas del mes (por ejemplo, porque aún no se han publicado), la app usa el precio medio disponible y lo indica.
+- El comparador usa el mismo consumo y la misma potencia para Pepe y PVPC.
+
+## Bono social
+
+El descuento del bono social solo se aplica al PVPC y a potencias de hasta 10 kW. Para 2026:
+
+- Consumidor vulnerable: **42,5 %**.
+- Consumidor vulnerable severo: **57,5 %**.
+- Riesgo de exclusión social: **100 %**.
+
+Se aplica al término de energía y al término de potencia. La energía con derecho a descuento tiene un límite anual que se prorratea por los días de la factura. La app permite seleccionar el límite de 1.587, 2.222, 2.698 o 4.761 kWh/año y calcula una estimación; el límite real se ajusta con la energía no consumida de los 12 meses anteriores.
+
+La línea **financiación del bono social** (~0,91 €/mes en Península/Baleares) es un coste regulado distinto del descuento y se aplica a todas las tarifas.
+
 ## Precios de Pepe
 
 La Tarifa Variable de Pepe publica un precio mensual para punta, llano y valle. La app consulta la API pública usada por su web:

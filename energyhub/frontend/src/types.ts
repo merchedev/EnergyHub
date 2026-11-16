@@ -2,6 +2,8 @@ export type PeriodId = 'P1' | 'P2' | 'P3'
 export type Confidence = 'alta' | 'media' | 'baja'
 export type DeviceMode = 'always_on' | 'hours_per_day' | 'cycles' | 'entity'
 export type Flexibility = 'flexible' | 'semi' | 'none'
+export type BonoSocialCategory = 'none' | 'vulnerable' | 'severe' | 'exclusion'
+export type PriceMode = 'hourly' | 'period'
 
 export interface Window {
   start: string
@@ -17,6 +19,7 @@ export interface Contract {
   region: string | null
   timezone: string
   tariff_type: string
+  tariff_profile_id: string
   access_toll: string
   segment: string | null
   power_p1_kw: number
@@ -27,6 +30,9 @@ export interface Contract {
   other_fees_eur_month: number
   vat_rate: number
   electricity_tax_rate: number
+  has_pepephone_discount: boolean
+  bono_social_category: BonoSocialCategory
+  bono_social_energy_limit_kwh: number
   currency: string
   billing_day: number
   notes: string | null
@@ -59,8 +65,78 @@ export interface PriceInfo {
   vat_rate: number | null
   electricity_tax_rate: number | null
   periods: PeriodPrice[]
+  is_hourly: boolean
   reference_month: string
   requested_month: string
+}
+
+export interface TariffProfile {
+  id: string
+  company: string
+  name: string
+  country: string
+  kind: 'period' | 'fixed' | 'hourly'
+  price_source: string
+  access_toll: string
+  service_fee_eur_month: number
+  social_bond_eur_month: number
+  meter_rent_eur_month: number
+  vat_rate: number
+  electricity_tax_rate: number
+  power_p1_price: number
+  power_p2_price: number
+  supports_pepephone_discount: boolean
+  pepephone_service_fee_discount?: number
+  bono_social_eligible: boolean
+  requires_manual_prices: boolean
+  notes: string
+  source_url?: string
+  last_updated?: string
+}
+
+export interface TariffsResponse {
+  profiles: TariffProfile[]
+  community_updated_at: string
+  notes: string
+}
+
+export interface HourlyPricePoint {
+  timestamp: string
+  price: number
+  period: PeriodId
+  missing: boolean
+}
+
+export interface PriceCurve {
+  points: HourlyPricePoint[]
+  missing_hours: number
+  source: string
+  coverage: number
+}
+
+export interface CheapWindow {
+  start: string
+  end: string
+  label: string
+  hours: number
+  period: PeriodId
+  average_price?: number
+}
+
+export interface ComparatorResponse {
+  month: string
+  current_total: number
+  alternative_total: number
+  savings_eur_month: number
+  current_label: string
+  alternative_label: string
+  current_energy_cost: number
+  alternative_energy_cost: number
+  pvpc_available: boolean
+  missing_hours: number
+  current_bono_social: number
+  alternative_bono_social: number
+  notes: string[]
 }
 
 export interface FixedBreakdown {
@@ -80,6 +156,19 @@ export interface FixedBreakdown {
   energy_prices: Record<PeriodId, number>
   electricity_tax_rate: number
   vat_rate: number
+  energy_cost_original?: number
+  power_cost_original?: number
+  service_fee_original?: number
+  service_discount?: number
+  bono_social_discount?: number
+  bono_social_percentage?: number
+  bono_social_applied?: boolean
+  bono_social_eligible?: boolean
+  by_period?: Record<PeriodId, number>
+  cost_by_period?: Record<PeriodId, number>
+  price_source?: string
+  missing_hours?: number
+  coverage?: number
 }
 
 export interface PriceProposal {
@@ -203,8 +292,14 @@ export interface DeviceSummary {
 export interface Totals {
   energy_kwh: number
   energy_cost: number
+  energy_cost_original?: number
   power_cost: number
+  power_cost_original?: number
   fees_total: number
+  service_discount?: number
+  bono_social_discount?: number
+  bono_social_percentage?: number
+  bono_social_applied?: boolean
   electricity_tax: number
   vat: number
   total: number
@@ -213,6 +308,8 @@ export interface Totals {
   calibration_factor: number
   confidence: Confidence
   confidence_score: number
+  missing_hours?: number
+  price_coverage?: number
 }
 
 export interface DataQuality {
@@ -227,6 +324,8 @@ export interface Dashboard {
   month: string
   month_label: string
   contract: Contract
+  profile: TariffProfile
+  price_mode: PriceMode
   price: PriceInfo | null
   totals: Totals
   by_period: Array<{ id: PeriodId; name: string; energy_kwh: number; cost: number; price: number }>
@@ -250,14 +349,6 @@ export interface Dashboard {
   }
 }
 
-export interface CheapWindow {
-  start: string
-  end: string
-  label: string
-  hours: number
-  period: PeriodId
-}
-
 export interface CalendarDay {
   date: string
   weekday: string
@@ -277,8 +368,11 @@ export interface CalendarDay {
 export interface CalendarResponse {
   month: string
   price: PriceInfo | null
+  profile: TariffProfile
+  price_mode: PriceMode
   periods: PeriodPrice[]
   days: CalendarDay[]
+  hourly: PriceCurve | null
   cheap_windows: CheapWindow[]
 }
 

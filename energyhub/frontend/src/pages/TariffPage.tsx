@@ -30,6 +30,7 @@ import {
   Modal,
   Select,
   Tabs,
+  Toggle,
   useToast,
 } from '../components/ui'
 import { useApi } from '../hooks/useApi'
@@ -42,27 +43,40 @@ import {
   pricePerKwDay,
 } from '../lib/format'
 import type {
+  BonoSocialCategory,
   Calibration,
+  ComparatorResponse,
   Contract,
   FixedBreakdown,
   HaEntity,
   PriceInfo,
   PriceProposal,
+  TariffProfile,
+  TariffsResponse,
 } from '../types'
 
-type Tab = 'contract' | 'prices' | 'bill' | 'esios'
+type Tab = 'contract' | 'prices' | 'bill' | 'comparator' | 'esios'
 
 interface CurrentTariffResponse {
   contract: Contract
+  profile: TariffProfile
   month: string
   month_label: string
   days: number
   price: PriceInfo | null
   periods: Array<{ id: string; name: string; price: number }>
   fixed: FixedBreakdown | null
+  price_mode: 'hourly' | 'period'
   calibration_factor: number
   calibration: Calibration | null
 }
+
+const BONO_LIMITS = [
+  { value: '1587', label: '1.587 kWh/año' },
+  { value: '2222', label: '2.222 kWh/año' },
+  { value: '2698', label: '2.698 kWh/año' },
+  { value: '4761', label: '4.761 kWh/año' },
+]
 
 const REGIONS = [
   { value: '', label: 'Festivos nacionales' },
@@ -91,6 +105,7 @@ function contractToForm(contract: Contract) {
   return {
     name: contract.name,
     provider: contract.provider,
+    tariff_profile_id: contract.tariff_profile_id,
     region: contract.region ?? '',
     power_p1_kw: String(contract.power_p1_kw),
     power_p2_kw: String(contract.power_p2_kw),
@@ -100,6 +115,26 @@ function contractToForm(contract: Contract) {
     other_fees_eur_month: String(contract.other_fees_eur_month),
     vat_rate: String(contract.vat_rate),
     electricity_tax_rate: String(contract.electricity_tax_rate),
+    has_pepephone_discount: contract.has_pepephone_discount,
+    bono_social_category: contract.bono_social_category,
+    bono_social_energy_limit_kwh: String(contract.bono_social_energy_limit_kwh),
+  }
+}
+
+function profileToForm(contractForm: ReturnType<typeof contractToForm>, profile: TariffProfile) {
+  return {
+    ...contractForm,
+    provider: profile.company,
+    tariff_profile_id: profile.id,
+    service_fee_eur_month: String(profile.service_fee_eur_month),
+    social_bond_eur_month: String(profile.social_bond_eur_month),
+    meter_rent_eur_month: String(profile.meter_rent_eur_month),
+    vat_rate: String(profile.vat_rate),
+    electricity_tax_rate: String(profile.electricity_tax_rate),
+    has_pepephone_discount: profile.supports_pepephone_discount
+      ? contractForm.has_pepephone_discount
+      : false,
+    bono_social_category: profile.bono_social_eligible ? contractForm.bono_social_category : 'none',
   }
 }
 
@@ -115,6 +150,18 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
   }>('/calibrations')
   const { data: settings } = useApi<{ esios_entity_id: string }>('/settings')
   const { data: priceEntities } = useApi<{ configured: boolean; items: HaEntity[] }>('/ha/entities?kind=price')
+  const { data: tariffsData } = useApi<TariffsResponse>('/tariffs')
+  const [comparatorMonth, setComparatorMonth] = useState(() => {
+    const previous = new Date()
+    previous.setMonth(previous.getMonth() - 1)
+    return monthInputValue(previous)
+  })
+  const {
+    data: comparatorData,
+    loading: comparatorLoading,
+    error: comparatorError,
+    reload: reloadComparator,
+  } = useApi<ComparatorResponse>(`/comparator?month=${comparatorMonth}`)
 
   const [tab, setTab] = useState<Tab>('contract')
   const [contractForm, setContractForm] = useState(() =>
@@ -123,6 +170,7 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
       : {
           name: 'Mi casa',
           provider: 'Pepe Energy',
+          tariff_profile_id: 'pepe_variable',
           region: '',
           power_p1_kw: '4.6',
           power_p2_kw: '4.6',
@@ -132,6 +180,9 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
           other_fees_eur_month: '0',
           vat_rate: '0.21',
           electricity_tax_rate: '0.0511269632',
+          has_pepephone_discount: false,
+          bono_social_category: 'none' as BonoSocialCategory,
+          bono_social_energy_limit_kwh: '1587',
         },
   )
   const [savingContract, setSavingContract] = useState(false)
@@ -201,8 +252,29 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
     [proposalsData],
   )
 
-  const setContract = (key: keyof typeof contractForm, value: string) =>
+  const profiles = tariffsData?.profiles ?? []
+  const selectedProfile =
+    profiles.find((profile) => profile.id === contractForm.tariff_profile_id) ?? data?.profile
+
+  const setContract = (key: keyof typeof contractForm, value: string | boolean) =>
     setContractForm((current) => ({ ...current, [key]: value }))
+
+  const applyProfile = (profileId: string) => {
+    const profile = profiles.find((item) => item.id === profileId)
+    if (!profile) return
+    setContractForm((current) => profileToForm(current, profile))
+  }
+
+  const togglePepephone = (value: boolean) => {
+    setContractForm((current) => ({
+      ...current,
+      has_pepephone_discount: value,
+      service_fee_eur_month:
+        value && selectedProfile?.supports_pepephone_discount
+          ? '0'
+          : String(selectedProfile?.service_fee_eur_month ?? 0),
+    }))
+  }
 
   const saveContract = async () => {
     setErrorLocal(null)
@@ -214,8 +286,9 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
         region: contractForm.region || null,
         country: 'ES',
         timezone: 'Europe/Madrid',
-        tariff_type: contractForm.provider.toLowerCase().includes('pepe') ? 'pepe_variable' : 'manual',
-        access_toll: '2.0TD',
+        tariff_type: selectedProfile?.kind ?? 'manual',
+        tariff_profile_id: contractForm.tariff_profile_id,
+        access_toll: selectedProfile?.access_toll ?? '2.0TD',
         segment: '1',
         power_p1_kw: Number(contractForm.power_p1_kw),
         power_p2_kw: Number(contractForm.power_p2_kw),
@@ -225,6 +298,9 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
         other_fees_eur_month: Number(contractForm.other_fees_eur_month),
         vat_rate: Number(contractForm.vat_rate),
         electricity_tax_rate: Number(contractForm.electricity_tax_rate),
+        has_pepephone_discount: contractForm.has_pepephone_discount,
+        bono_social_category: contractForm.bono_social_category,
+        bono_social_energy_limit_kwh: Number(contractForm.bono_social_energy_limit_kwh),
         currency: 'EUR',
         billing_day: data?.contract.billing_day ?? 1,
       })
@@ -375,9 +451,11 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
           <Button onClick={() => void reload()}>
             <RefreshCw size={14} /> Actualizar
           </Button>
-          <Button variant="primary" onClick={() => void fetchPepe()} disabled={pepeLoading}>
-            <CloudDownload size={14} /> {pepeLoading ? 'Consultando…' : 'Buscar precios de Pepe'}
-          </Button>
+          {selectedProfile?.price_source.startsWith('pepe_api') ? (
+            <Button variant="primary" onClick={() => void fetchPepe()} disabled={pepeLoading}>
+              <CloudDownload size={14} /> {pepeLoading ? 'Consultando…' : 'Buscar precios de Pepe'}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -386,6 +464,7 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
           { value: 'contract' as Tab, label: 'Contrato' },
           { value: 'prices' as Tab, label: 'Precios' },
           { value: 'bill' as Tab, label: 'Factura' },
+          { value: 'comparator' as Tab, label: 'Comparador' },
           { value: 'esios' as Tab, label: 'ESIOS' },
         ].map((item) => (
           <button
@@ -439,11 +518,20 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
               <Field label="Nombre">
                 <Input value={contractForm.name} onChange={(event) => setContract('name', event.target.value)} />
               </Field>
-              <Field label="Comercializadora">
-                <Input
-                  value={contractForm.provider}
-                  onChange={(event) => setContract('provider', event.target.value)}
-                />
+              <Field
+                label="Compañía y tarifa"
+                hint={selectedProfile ? `${selectedProfile.notes}${selectedProfile.requires_manual_prices ? ' Precios manuales.' : ''}` : undefined}
+              >
+                <Select
+                  value={contractForm.tariff_profile_id}
+                  onChange={(event) => applyProfile(event.target.value)}
+                >
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.company} · {profile.name}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Potencia P1 (kW)" hint="Punta y llano">
                 <Input
@@ -472,7 +560,7 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                   onChange={(event) => setContract('service_fee_eur_month', event.target.value)}
                 />
               </Field>
-              <Field label="Bono social (€/mes)" hint="Impuestos incluidos">
+              <Field label="Financiación del bono social (€/mes)" hint="Impuestos incluidos">
                 <Input
                   type="number"
                   step="any"
@@ -532,12 +620,60 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                 </Select>
               </Field>
               <Field label="Peaje de acceso">
-                <Input value={data.contract.access_toll} disabled />
+                <Input value={selectedProfile?.access_toll ?? data.contract.access_toll} disabled />
               </Field>
             </div>
+            {selectedProfile?.supports_pepephone_discount ? (
+              <Toggle
+                checked={contractForm.has_pepephone_discount}
+                onChange={togglePepephone}
+                label="Soy cliente de Pepephone"
+                hint="La cuota de servicio pasa a 0 €/mes."
+              />
+            ) : null}
+            <div className="form-grid mt-12">
+              <Field label="Categoría de bono social" hint="Solo se aplica al PVPC.">
+                <Select
+                  value={contractForm.bono_social_category}
+                  onChange={(event) =>
+                    setContract('bono_social_category', event.target.value as BonoSocialCategory)
+                  }
+                >
+                  <option value="none">No soy beneficiario</option>
+                  <option value="vulnerable">Vulnerable · 42,5 %</option>
+                  <option value="severe">Vulnerable severo · 57,5 %</option>
+                  <option value="exclusion">Riesgo de exclusión · 100 %</option>
+                </Select>
+              </Field>
+              <Field label="Límite anual de energía">
+                <Select
+                  value={contractForm.bono_social_energy_limit_kwh}
+                  onChange={(event) =>
+                    setContract('bono_social_energy_limit_kwh', event.target.value)
+                  }
+                >
+                  {BONO_LIMITS.map((limit) => (
+                    <option key={limit.value} value={limit.value}>
+                      {limit.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            {contractForm.bono_social_category !== 'none' && selectedProfile && !selectedProfile.bono_social_eligible ? (
+              <Banner tone="warning">
+                <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  El descuento del bono social solo se aplica al PVPC. Con esta tarifa no se aplicará;
+                  puedes usar el comparador para ver PVPC con el descuento.
+                </span>
+              </Banner>
+            ) : null}
             <div className="between mt-16">
               <span className="small muted">
-                {data.contract.tariff_type === 'pepe_variable' ? 'Pepe Tarifa Variable · Mercado libre · 2.0TD' : data.contract.tariff_type}
+                {selectedProfile
+                  ? `${selectedProfile.company} · ${selectedProfile.name} · ${selectedProfile.access_toll}`
+                  : data.contract.tariff_type}
               </span>
               <Button variant="primary" onClick={() => void saveContract()} disabled={savingContract}>
                 <Save size={14} /> {savingContract ? 'Guardando…' : 'Guardar contrato'}
@@ -572,6 +708,15 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                       <span>
                         Pepe publica el precio del mes pasado. {price.month_label} se usa como referencia
                         provisional para {data.month_label}. Cuando publiquen el mes actual, confírmalo.
+                      </span>
+                    </Banner>
+                  ) : null}
+                  {price.is_hourly ? (
+                    <Banner tone="accent">
+                      <Zap size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        <strong>PVPC horario.</strong> Las tarjetas muestran la media de cada tramo. El coste
+                        real se calcula hora a hora con los precios de REE. Consulta la curva en Horarios.
                       </span>
                     </Banner>
                   ) : null}
@@ -612,7 +757,13 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                     </div>
                     <div>
                       <div className="field-label">Fuente</div>
-                      <div>{price.source === 'pepe_api' ? 'API pública de Pepe' : 'Manual'}</div>
+                      <div>
+                        {price.source === 'pepe_api'
+                          ? 'API pública de Pepe'
+                          : price.source === 'ree_pvpc'
+                            ? 'REE · PVPC horario'
+                            : 'Manual'}
+                      </div>
                       <div className="field-hint">{formatDate(price.valid_from)}</div>
                     </div>
                   </div>
@@ -622,12 +773,24 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                       {price.status === 'confirmed' ? 'confirmados' : price.status}
                     </span>
                     <div className="flex gap-8">
-                      <Button size="sm" variant="ghost" onClick={() => setManualOpen(true)}>
-                        Precios manuales
-                      </Button>
-                      <Button size="sm" onClick={() => void fetchPepe()} disabled={pepeLoading}>
-                        <CloudDownload size={13} /> Actualizar desde Pepe
-                      </Button>
+                      {selectedProfile?.price_source.startsWith('pepe_api') ? (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => setManualOpen(true)}>
+                            Precios manuales
+                          </Button>
+                          <Button size="sm" onClick={() => void fetchPepe()} disabled={pepeLoading}>
+                            <CloudDownload size={13} /> Actualizar desde Pepe
+                          </Button>
+                        </>
+                      ) : selectedProfile?.price_source === 'ree_pvpc' ? (
+                        <Button size="sm" variant="ghost" onClick={() => void reload()}>
+                          <RefreshCw size={13} /> Actualizar PVPC
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" onClick={() => setManualOpen(true)}>
+                          Precios manuales
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </>
@@ -638,14 +801,23 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                   </div>
                   <div className="empty-title">Añade los precios de tu tarifa</div>
                   <div className="empty-text">
-                    Puedes leerlos automáticamente de Pepe o introducirlos a mano. Sin precios no se puede
-                    calcular el coste.
+                    {selectedProfile?.price_source === 'ree_pvpc'
+                      ? 'El PVPC se descarga de la API pública de REE. Pulsa actualizar para cargar los precios horarios.'
+                      : 'Puedes leerlos automáticamente de Pepe o introducirlos a mano. Sin precios no se puede calcular el coste.'}
                   </div>
                   <div className="flex gap-8 mt-12">
-                    <Button variant="primary" onClick={() => void fetchPepe()} disabled={pepeLoading}>
-                      <CloudDownload size={14} /> {pepeLoading ? 'Consultando…' : 'Buscar en Pepe'}
-                    </Button>
-                    <Button onClick={() => setManualOpen(true)}>Introducir manualmente</Button>
+                    {selectedProfile?.price_source.startsWith('pepe_api') ? (
+                      <Button variant="primary" onClick={() => void fetchPepe()} disabled={pepeLoading}>
+                        <CloudDownload size={14} /> {pepeLoading ? 'Consultando…' : 'Buscar en Pepe'}
+                      </Button>
+                    ) : null}
+                    {selectedProfile?.price_source !== 'ree_pvpc' ? (
+                      <Button onClick={() => setManualOpen(true)}>Introducir manualmente</Button>
+                    ) : (
+                      <Button variant="primary" onClick={() => void reload()}>
+                        <RefreshCw size={14} /> Cargar PVPC
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -655,31 +827,57 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
           <Card className="span-5">
             <div className="card-header">
               <div>
-                <h2 className="card-title">Cómo funciona Pepe</h2>
-                <p className="card-subtitle">Precio mensual por tramo, no PVPC horario.</p>
+                <h2 className="card-title">
+                  {selectedProfile?.price_source === 'ree_pvpc'
+                    ? 'Cómo funciona PVPC'
+                    : selectedProfile?.price_source.startsWith('pepe_api')
+                      ? 'Cómo funciona Pepe'
+                      : 'Precios manuales'}
+                </h2>
+                <p className="card-subtitle">
+                  {selectedProfile?.price_source === 'ree_pvpc'
+                    ? 'Precio horario y bono social.'
+                    : selectedProfile?.price_source.startsWith('pepe_api')
+                      ? 'Precio mensual por tramo, no PVPC horario.'
+                      : 'Perfil de mercado libre; confirma los precios con tu factura.'}
+                </p>
               </div>
               <Link2 size={16} className="muted" />
             </div>
             <div className="card-body">
               <div className="small muted" style={{ lineHeight: 1.65 }}>
-                La Tarifa Variable de Pepe publica un precio distinto para punta, llano y valle cada mes.
-                Dentro de un tramo, el precio no cambia hora a hora. Por eso tu factura se calcula con estos
-                precios mensuales y el calendario 2.0TD, no con el precio horario de ESIOS.
+                {selectedProfile?.price_source === 'ree_pvpc'
+                  ? 'El PVPC se calcula hora a hora con los precios publicados por REE. El término de potencia es regulado y el bono social solo se aplica a esta tarifa. La factura se calcula con la curva horaria de tu consumo.'
+                  : selectedProfile?.price_source.startsWith('pepe_api')
+                    ? 'La Tarifa Variable de Pepe publica un precio distinto para punta, llano y valle cada mes. Dentro de un tramo, el precio no cambia hora a hora. Por eso tu factura se calcula con estos precios mensuales y el calendario 2.0TD, no con el precio horario de ESIOS.'
+                    : 'Los precios de las comercializadoras de mercado libre dependen de tu contrato y no tienen una API pública fiable. Este perfil se rellena a mano y se puede actualizar cuando cambie tu tarifa.'}
               </div>
               <div className="banner mt-12">
                 <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>
-                  Pepe suele publicar el precio del mes anterior. La app lo marca como provisional y usa el
-                  último disponible hasta que confirmes el mes actual.
+                  {selectedProfile?.price_source === 'ree_pvpc'
+                    ? 'El descuento del bono social solo se aplica a PVPC. La financiación regulada aparece como línea independiente.'
+                    : selectedProfile?.price_source.startsWith('pepe_api')
+                      ? 'Pepe suele publicar el precio del mes anterior. La app lo marca como provisional y usa el último disponible hasta que confirmes el mes actual.'
+                      : 'Los perfiles del catálogo comunitario son orientativos. Confirma siempre la cuota, los precios y los impuestos con tu factura.'}
                 </span>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 className="mt-12"
-                onClick={() => window.open('https://www.pepeenergy.com/tarifas-luz/tarifa-variable-luz', '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open(
+                    selectedProfile?.price_source === 'ree_pvpc'
+                      ? 'https://www.esios.ree.es/es/pvpc'
+                      : selectedProfile?.source_url ||
+                          'https://www.pepeenergy.com/tarifas-luz/tarifa-variable-luz',
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
               >
-                Ver página de Pepe <ExternalLink size={12} />
+                Ver fuente <ExternalLink size={12} />
               </Button>
             </div>
           </Card>
@@ -711,10 +909,27 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                     <span>Cuota de servicio</span>
                     <span className="mono">{eur(fixed.service_fee)}</span>
                   </div>
+                  {fixed.service_discount && fixed.service_discount > 0 ? (
+                    <div className="between small mt-8" style={{ color: 'var(--success)' }}>
+                      <span>Descuento Pepephone</span>
+                      <span className="mono">−{eur(fixed.service_discount)}</span>
+                    </div>
+                  ) : null}
                   <div className="between small muted mt-8">
-                    <span>Bono social</span>
+                    <span>Financiación del bono social</span>
                     <span className="mono">{eur(fixed.social_bond)}</span>
                   </div>
+                  {fixed.bono_social_discount && fixed.bono_social_discount > 0 ? (
+                    <div className="between small mt-8" style={{ color: 'var(--success)' }}>
+                      <span>
+                        Descuento bono social
+                        {fixed.bono_social_percentage
+                          ? ` (${(fixed.bono_social_percentage * 100).toFixed(1)} %)`
+                          : ''}
+                      </span>
+                      <span className="mono">−{eur(fixed.bono_social_discount)}</span>
+                    </div>
+                  ) : null}
                   <div className="between small muted mt-8">
                     <span>Alquiler de contador</span>
                     <span className="mono">{eur(fixed.meter_rent)}</span>
@@ -742,6 +957,17 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                     Estimación del mes actual. La factura real puede variar por lecturas, ajustes o cambios
                     de precio.
                   </div>
+                  {data.contract.bono_social_category !== 'none' &&
+                  selectedProfile &&
+                  !selectedProfile.bono_social_eligible ? (
+                    <Banner tone="warning">
+                      <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        El descuento del bono social solo se aplica al PVPC. Con esta tarifa no se ha
+                        aplicado; el comparador muestra cuánto ahorrarías con PVPC.
+                      </span>
+                    </Banner>
+                  ) : null}
                 </>
               ) : (
                 <Banner tone="warning">
@@ -811,6 +1037,115 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                 Factor actual: <strong>{data.calibration_factor.toFixed(2)}</strong>
                 {latestCalibration ? ` · última calibración ${formatDate(latestCalibration.created_at)}` : ' · sin calibrar'}
               </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {tab === 'comparator' ? (
+        <div className="card-grid mt-12">
+          <Card className="span-12">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">Comparador Pepe vs PVPC</h2>
+                <p className="card-subtitle">
+                  Mismo consumo estimado y misma potencia contratada. Recomendamos un mes completo; la
+                  comparación es orientativa.
+                </p>
+              </div>
+              <div className="flex gap-8" style={{ alignItems: 'center' }}>
+                <Input
+                  type="month"
+                  value={comparatorMonth}
+                  onChange={(event) => setComparatorMonth(event.target.value || comparatorMonth)}
+                  style={{ width: 155 }}
+                  aria-label="Mes del comparador"
+                />
+                <Button size="sm" onClick={() => void reloadComparator()} disabled={comparatorLoading}>
+                  <RefreshCw size={13} /> Actualizar
+                </Button>
+              </div>
+            </div>
+            <div className="card-body">
+              {comparatorLoading && !comparatorData ? (
+                <Loading label="Calculando comparación…" />
+              ) : comparatorError && !comparatorData ? (
+                <Banner tone="warning">
+                  <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>{comparatorError}</span>
+                </Banner>
+              ) : comparatorData ? (
+                <>
+                  <div className="period-grid">
+                    <div className="period-card">
+                      <div className="field-label">Tu tarifa actual</div>
+                      <div className="period-cost" style={{ fontSize: 24 }}>
+                        {eur(comparatorData.current_total)}
+                      </div>
+                      <div className="period-energy">{comparatorData.current_label}</div>
+                      <div className="period-price">
+                        Energía: {eur(comparatorData.current_energy_cost)}
+                      </div>
+                    </div>
+                    <div className="period-card">
+                      <div className="field-label">Alternativa</div>
+                      <div className="period-cost" style={{ fontSize: 24 }}>
+                        {eur(comparatorData.alternative_total)}
+                      </div>
+                      <div className="period-energy">{comparatorData.alternative_label}</div>
+                      <div className="period-price">
+                        Energía: {eur(comparatorData.alternative_energy_cost)}
+                      </div>
+                    </div>
+                    <div className={`period-card ${comparatorData.savings_eur_month > 0 ? 'comparison-win' : ''}`}>
+                      <div className="field-label">
+                        {comparatorData.savings_eur_month > 0 ? 'Ahorro potencial' : 'Diferencia'}
+                      </div>
+                      <div
+                        className="period-cost"
+                        style={{
+                          fontSize: 24,
+                          color:
+                            comparatorData.savings_eur_month > 0
+                              ? 'var(--success)'
+                              : 'var(--text)',
+                        }}
+                      >
+                        {eur(Math.abs(comparatorData.savings_eur_month))}
+                      </div>
+                      <div className="period-energy">
+                        {comparatorData.savings_eur_month > 0
+                          ? `más barato con ${comparatorData.alternative_label}`
+                          : 'tu tarifa actual es más barata'}
+                      </div>
+                    </div>
+                  </div>
+                  {comparatorData.missing_hours > 0 ? (
+                    <Banner tone="warning">
+                      <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        Faltan {comparatorData.missing_hours} horas de PVPC para el mes. Se ha usado el
+                        precio medio disponible; la comparación puede cambiar.
+                      </span>
+                    </Banner>
+                  ) : null}
+                  <div className="mt-12 small muted">
+                    {comparatorData.notes.map((note) => (
+                      <div key={note}>· {note}</div>
+                    ))}
+                  </div>
+                  {comparatorData.current_bono_social > 0 || comparatorData.alternative_bono_social > 0 ? (
+                    <div className="banner mt-12">
+                      <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        Bono social aplicado: actual{' '}
+                        {eur(comparatorData.current_bono_social)} · alternativa{' '}
+                        {eur(comparatorData.alternative_bono_social)}. Solo se aplica a PVPC.
+                      </span>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </Card>
         </div>

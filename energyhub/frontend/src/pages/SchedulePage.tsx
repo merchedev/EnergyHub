@@ -9,6 +9,15 @@ import {
   Sunrise,
   Zap,
 } from 'lucide-react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { Badge, Banner, Button, Card, Loading, ErrorBox, PeriodLegend } from '../components/ui'
 import { DeviceIcon } from '../components/Icon'
 import { useApi } from '../hooks/useApi'
@@ -39,6 +48,23 @@ export function SchedulePage() {
     [devicesData],
   )
 
+  const hourlyChart = useMemo(
+    () =>
+      (data?.hourly?.points ?? []).slice(0, 48).map((point) => {
+        const date = new Date(point.timestamp)
+        return {
+          label: new Intl.DateTimeFormat('es-ES', {
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(date),
+          price: Number(point.price.toFixed(4)),
+          missing: point.missing,
+        }
+      }),
+    [data],
+  )
+
   if (loading && !data) return <Loading label="Preparando el calendario…" />
   if (error && !data) return <ErrorBox message={error} />
   if (!data) return null
@@ -54,8 +80,9 @@ export function SchedulePage() {
           </div>
           <h1 className="page-title">La energía barata tiene horario.</h1>
           <p className="page-subtitle">
-            Con tu Tarifa Variable de Pepe, el precio depende del tramo, no de cada hora. Aquí tienes el
-            calendario valle/llano/punta y las mejores ventanas para las cargas flexibles.
+            {data.price_mode === 'hourly'
+              ? 'Tu tarifa PVPC cambia cada hora. Aquí tienes la curva de precio, las mejores ventanas y el planificador de cargas flexibles.'
+              : 'Con tu tarifa por tramos, el precio depende de valle/llano/punta. Aquí tienes el calendario y las mejores ventanas para las cargas flexibles.'}
           </p>
         </div>
         <div className="actions">
@@ -78,12 +105,87 @@ export function SchedulePage() {
         </Banner>
       ) : null}
 
+      {data.price_mode === 'hourly' ? (
+        <>
+          <Banner tone="accent">
+            <Zap size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              <strong>PVPC horario.</strong> Precios de REE para las próximas 48 h. El importe de cada hora
+              se aplica a tu consumo estimado en esa hora.
+              {data.hourly && data.hourly.missing_hours > 0
+                ? ` Faltan ${data.hourly.missing_hours} horas por publicar; se usa el precio medio disponible.`
+                : ''}
+            </span>
+          </Banner>
+          {hourlyChart.length > 0 ? (
+            <Card className="mt-16">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Precio PVPC por hora</h2>
+                  <p className="card-subtitle">Próximas 48 h · €/kWh</p>
+                </div>
+                <Badge tone="green">Horario</Badge>
+              </div>
+              <div className="card-body">
+                <div className="chart-box" style={{ height: 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={hourlyChart} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="pvpcFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.01} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--border)" vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        axisLine={false}
+                        tickLine={false}
+                        interval={5}
+                        tick={{ fontSize: 10 }}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(value) => `${Number(value).toFixed(2)}`}
+                      />
+                      <Tooltip
+                        formatter={(value) => [pricePerKwh(Number(value)), 'PVPC']}
+                        contentStyle={{
+                          background: 'var(--surface-3)',
+                          border: '1px solid var(--border-strong)',
+                          borderRadius: 10,
+                          fontSize: 11,
+                          color: 'var(--text)',
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="price"
+                        stroke="var(--accent)"
+                        strokeWidth={2}
+                        fill="url(#pvpcFill)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+        </>
+      ) : null}
+
       <div className="card-grid mt-16">
         <Card className="span-8">
           <div className="card-header">
             <div>
               <h2 className="card-title">Próximos 7 días</h2>
-              <p className="card-subtitle">Cada barra representa las 24 h del día.</p>
+              <p className="card-subtitle">
+                {data.price_mode === 'hourly'
+                  ? 'Tramos 2.0TD con el precio medio de cada periodo.'
+                  : 'Cada barra representa las 24 h del día.'}
+              </p>
             </div>
             <PeriodLegend />
           </div>
@@ -151,7 +253,8 @@ export function SchedulePage() {
                   <div>
                     <div className="cheap-label">{window.label}</div>
                     <div className="cheap-meta">
-                      {window.hours.toFixed(1)} h · {pricePerKwh(data.price?.p3_price ?? 0)}
+                      {window.hours.toFixed(1)} h ·{' '}
+                      {pricePerKwh(window.average_price ?? data.price?.p3_price ?? 0)}
                     </div>
                   </div>
                 </div>
@@ -161,8 +264,8 @@ export function SchedulePage() {
               <div className="banner accent mt-16">
                 <Clock3 size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>
-                  La próxima ventana valle es <strong>{cheapest.label}</strong>. Es el mejor momento para
-                  lavadora, lavavajillas, secadora o coche eléctrico.
+                  La próxima ventana más barata es <strong>{cheapest.label}</strong>. Es el mejor momento
+                  para lavadora, lavavajillas, secadora o coche eléctrico.
                 </span>
               </div>
             ) : null}
@@ -227,9 +330,9 @@ export function SchedulePage() {
           <div className="banner mt-16">
             <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>
-              Con la tarifa de Pepe, todas las horas de valle valen lo mismo. La app no te dirá que pongas
-              la vitro a las 3 de la mañana: solo mueve cargas que realmente puedas programar. El
-              comparador horario con PVPC/ESIOS queda para la fase 2.
+              {data.price_mode === 'hourly'
+                ? 'Con PVPC, la app busca la ventana más barata de las próximas horas. No te dirá que pongas la vitro a las 3 de la mañana: solo mueve cargas que realmente puedas programar. Puedes comparar Pepe y PVPC en Tarifa → Comparador.'
+                : 'Con la tarifa de Pepe, todas las horas de valle valen lo mismo. La app no te dirá que pongas la vitro a las 3 de la mañana: solo mueve cargas que realmente puedas programar. Puedes comparar Pepe y PVPC en Tarifa → Comparador.'}
             </span>
           </div>
         </div>

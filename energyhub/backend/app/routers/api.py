@@ -4,6 +4,7 @@ import json
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
@@ -35,7 +36,19 @@ from ..schemas import (
     PriceProposalOut,
     SettingsUpdate,
 )
-from ..services import changelog, demo, estimation, ha, pepe, periods, recommendations, tariff
+from ..services import (
+    changelog,
+    demo,
+    estimation,
+    ha,
+    pepe,
+    periods,
+    prices,
+    profiles,
+    pvpc,
+    recommendations,
+    tariff,
+)
 
 router = APIRouter(prefix="/api")
 ha_client = ha.HaClient()
@@ -72,7 +85,17 @@ def _month(value: str | None, contract: Contract) -> tuple[int, int]:
 def _price_for(
     db: Session, contract: Contract, year: int, month: int
 ) -> tuple[TariffPrice | None, bool]:
-    return tariff.get_price_for_month(db, contract, year, month)
+    profile = profiles.get_profile(contract.tariff_profile_id)
+    if profile.get("price_source") == "ree_pvpc":
+        return prices.ensure_tariff_price(db, contract, year, month), False
+    if str(profile.get("price_source", "")).startswith("pepe_api"):
+        price, is_fallback = tariff.get_price_for_month(
+            db, contract, year, month, source="pepe_api"
+        )
+        if price is not None:
+            return price, is_fallback
+        return tariff.get_price_for_month(db, contract, year, month, source="manual")
+    return tariff.get_price_for_month(db, contract, year, month, source="manual")
 
 
 def _estimate_rows(
@@ -81,28 +104,95 @@ def _estimate_rows(
     price: TariffPrice | None,
     year: int,
     month: int,
-) -> tuple[list[tuple[Device, estimation.DeviceEstimate]], float, dict[str, float], dict | None]:
+) -> tuple[
+    list[tuple[Device, estimation.DeviceEstimate]],
+    float,
+    dict[str, float],
+    dict | None,
+    prices.PriceCurve,
+]:
     factor = tariff.calibration_factor(db, contract)
+    curve = (
+        prices.build_month_curve(db, contract, price, year, month)
+        if price is not None
+        else prices.zero_month_curve(contract, year, month)
+    )
     devices = list(
         db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id)).all()
     )
     rows = [
-        (device, estimation.estimate_device(device, contract, price, year, month, factor))
+        (device, estimation.estimate_device_hourly(device, contract, curve, year, month, factor))
         for device in devices
     ]
     by_period = {"P1": 0.0, "P2": 0.0, "P3": 0.0}
+    energy_by_hour: dict[datetime, float] = {}
     for _device, est in rows:
         for p in periods.PERIOD_ORDER:
             by_period[p] += est.by_period.get(p, 0.0)
+        for hour_dt, energy in est.hourly.items():
+            energy_by_hour[hour_dt] = energy_by_hour.get(hour_dt, 0.0) + energy
     bill = None
     if price is not None:
-        bill = tariff.bill_breakdown(
+        bill = tariff.bill_breakdown_hourly(
             contract,
             price,
             periods.month_days(year, month),
-            by_period,
+            energy_by_hour,
+            curve,
         )
-    return rows, factor, by_period, bill
+    return rows, factor, by_period, bill, curve
+
+
+def _estimate_one(
+    db: Session,
+    contract: Contract,
+    device: Device,
+    year: int,
+    month: int,
+) -> tuple[TariffPrice | None, prices.PriceCurve, estimation.DeviceEstimate]:
+    price, _fallback = _price_for(db, contract, year, month)
+    curve = (
+        prices.build_month_curve(db, contract, price, year, month)
+        if price is not None
+        else prices.zero_month_curve(contract, year, month)
+    )
+    est = estimation.estimate_device_hourly(
+        device,
+        contract,
+        curve,
+        year,
+        month,
+        tariff.calibration_factor(db, contract),
+    )
+    return price, curve, est
+
+
+def _curve_cheap_windows(
+    curve: prices.PriceCurve,
+    tz: ZoneInfo,
+    count: int = 4,
+    duration_hours: int = 2,
+) -> list[dict]:
+    windows = prices.cheapest_windows(curve, duration_hours=duration_hours, count=count)
+    now = datetime.now(tz)
+    result = []
+    for window in windows:
+        start = datetime.fromisoformat(window["start"])
+        end = datetime.fromisoformat(window["end"])
+        if start.date() == now.date():
+            prefix = "Hoy"
+        elif start.date() == now.date() + timedelta(days=1):
+            prefix = "Mañana"
+        else:
+            prefix = periods.WEEKDAYS_ES[start.weekday()].capitalize() + f" {start.day}"
+        result.append(
+            {
+                **window,
+                "label": f"{prefix}, {start.strftime('%H:%M')}–{end.strftime('%H:%M')}",
+                "hours": window["hours"],
+            }
+        )
+    return result
 
 
 def _device_summary(
@@ -190,17 +280,19 @@ def _device_from_payload(payload: DeviceIn) -> Device:
 def _serialize_current_tariff(db: Session, contract: Contract, year: int, month: int) -> dict:
     price, is_fallback = _price_for(db, contract, year, month)
     days = periods.month_days(year, month)
-    _rows, _factor, _by_period, bill = _estimate_rows(db, contract, price, year, month)
+    _rows, _factor, _by_period, bill, _curve = _estimate_rows(db, contract, price, year, month)
     fixed = bill
     calibration = tariff.get_latest_calibration(db, contract)
     return {
         "contract": ContractOut.model_validate(contract).model_dump(mode="json"),
+        "profile": profiles.get_profile(contract.tariff_profile_id),
         "month": f"{year:04d}-{month:02d}",
         "month_label": periods.month_label_es(year, month),
         "days": days,
         "price": tariff.price_to_dict(price, year, month, is_fallback),
         "periods": tariff.period_price_list(price),
         "fixed": fixed,
+        "price_mode": "hourly" if price and price.source == "ree_pvpc" else "period",
         "calibration_factor": tariff.calibration_factor(db, contract),
         "calibration": CalibrationOut.model_validate(calibration).model_dump(mode="json")
         if calibration
@@ -237,6 +329,18 @@ async def bootstrap(db: Session = Depends(get_db)) -> dict:
 @router.get("/catalog")
 def catalog() -> dict:
     return {"items": CATALOG}
+
+
+@router.get("/tariffs")
+def tariffs() -> dict:
+    return {
+        "profiles": profiles.all_profiles(),
+        "community_updated_at": "2026-11-16",
+        "notes": (
+            "Pepe y PVPC tienen precios automáticos. Los perfiles de mercado libre "
+            "del catálogo comunitario son orientativos y requieren confirmar los precios."
+        ),
+    }
 
 
 @router.get("/changelog")
@@ -292,8 +396,25 @@ def tariff_calendar(
         tz = ZoneInfo("Europe/Madrid")
     now = datetime.now(tz)
     year, month_number = _month(None, contract)
+    profile = profiles.get_profile(contract.tariff_profile_id)
     price, is_fallback = _price_for(db, contract, year, month_number)
     values = tariff.period_prices(price) if price is not None else {p: 0.0 for p in periods.PERIOD_ORDER}
+    hourly_data = None
+    if profile.get("price_source") == "ree_pvpc" and price is not None:
+        start_hour = now.replace(minute=0, second=0, microsecond=0)
+        curve = prices.build_range_curve(
+            db, contract, price, start_hour, start_hour + timedelta(days=days)
+        )
+        hourly_data = curve.as_dict()
+        cheap = _curve_cheap_windows(curve, tz, count=6, duration_hours=2)
+    else:
+        cheap = periods.next_cheap_windows(
+            now,
+            country=contract.country,
+            region=contract.region,
+            tz=tz,
+            count=6,
+        )
     result_days = []
     for offset in range(days):
         day = now.date() + timedelta(days=offset)
@@ -314,15 +435,171 @@ def tariff_calendar(
     return {
         "month": f"{year:04d}-{month_number:02d}",
         "price": tariff.price_to_dict(price, year, month_number, is_fallback),
+        "profile": profile,
+        "price_mode": "hourly" if profile.get("price_source") == "ree_pvpc" else "period",
         "periods": tariff.period_price_list(price),
         "days": result_days,
-        "cheap_windows": periods.next_cheap_windows(
-            now,
-            country=contract.country,
-            region=contract.region,
-            tz=tz,
-            count=6,
+        "hourly": hourly_data,
+        "cheap_windows": cheap,
+    }
+
+
+@router.get("/tariff/hourly")
+def tariff_hourly(
+    days: int = Query(default=2, ge=1, le=7),
+    duration: int = Query(default=2, ge=1, le=8),
+    db: Session = Depends(get_db),
+) -> dict:
+    contract = _contract_or_404(db)
+    try:
+        tz = ZoneInfo(contract.timezone or "Europe/Madrid")
+    except Exception:
+        tz = ZoneInfo("Europe/Madrid")
+    now = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+    year, month_number = _month(None, contract)
+    price, is_fallback = _price_for(db, contract, year, month_number)
+    profile = profiles.get_profile(contract.tariff_profile_id)
+    if price is None:
+        raise HTTPException(status_code=409, detail="No hay precios para calcular la curva horaria")
+    curve = prices.build_range_curve(db, contract, price, now, now + timedelta(days=days))
+    return {
+        "profile": profile,
+        "price_mode": "hourly" if profile.get("price_source") == "ree_pvpc" else "period",
+        "price": tariff.price_to_dict(price, year, month_number, is_fallback),
+        "curve": curve.as_dict(),
+        "cheap_windows": _curve_cheap_windows(
+            curve, tz, count=6, duration_hours=duration
         ),
+    }
+
+
+def _profile_contract(contract: Contract, profile_id: str) -> SimpleNamespace:
+    defaults = profiles.profile_defaults(profile_id)
+    return SimpleNamespace(
+        power_p1_kw=contract.power_p1_kw,
+        power_p2_kw=contract.power_p2_kw,
+        tariff_profile_id=profile_id,
+        has_pepephone_discount=bool(contract.has_pepephone_discount)
+        and bool(defaults.get("supports_pepephone_discount")),
+        bono_social_category=contract.bono_social_category,
+        bono_social_energy_limit_kwh=contract.bono_social_energy_limit_kwh,
+        service_fee_eur_month=defaults["service_fee_eur_month"],
+        social_bond_eur_month=defaults["social_bond_eur_month"],
+        meter_rent_eur_month=defaults["meter_rent_eur_month"],
+        other_fees_eur_month=0.0,
+        vat_rate=defaults["vat_rate"],
+        electricity_tax_rate=defaults["electricity_tax_rate"],
+        country=contract.country,
+        region=contract.region,
+        timezone=contract.timezone,
+    )
+
+
+@router.get("/comparator")
+def comparator(
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    contract = _contract_or_404(db)
+    year, month_number = _month(month, contract)
+    price, is_fallback = _price_for(db, contract, year, month_number)
+    profile = profiles.get_profile(contract.tariff_profile_id)
+    rows, _factor, _by_period, current_bill, current_curve = _estimate_rows(
+        db, contract, price, year, month_number
+    )
+    if current_bill is None:
+        raise HTTPException(status_code=409, detail="No hay precios actuales para comparar")
+    energy_by_hour: dict[datetime, float] = {}
+    for _device, est in rows:
+        for hour_dt, energy in est.hourly.items():
+            energy_by_hour[hour_dt] = energy_by_hour.get(hour_dt, 0.0) + energy
+    days = periods.month_days(year, month_number)
+    notes: list[str] = ["Misma potencia contratada y mismo consumo estimado para ambos escenarios."]
+    if profile.get("price_source") == "ree_pvpc":
+        alternative_profile_id = "pepe_variable"
+        alternative_price, _ = tariff.get_price_for_month(
+            db, contract, year, month_number, source="pepe_api"
+        )
+        if alternative_price is None or alternative_price.source not in {"pepe_api", "manual"}:
+            raise HTTPException(
+                status_code=409,
+                detail="No hay precios de Pepe guardados para comparar con PVPC",
+            )
+        alternative_contract = _profile_contract(contract, alternative_profile_id)
+        alt_curve = prices.build_month_curve(
+            db, alternative_contract, alternative_price, year, month_number
+        )
+        pvpc_available = current_curve.coverage > 0
+        missing_hours = current_curve.missing_hours
+        if is_fallback:
+            notes.append("El precio de Pepe es provisional.")
+    else:
+        alternative_profile_id = "pvpc_2td"
+        alternative_contract = _profile_contract(contract, alternative_profile_id)
+        first, last = periods.month_bounds(year, month_number)
+        alternative_price = TariffPrice(
+            contract_id=contract.id,
+            valid_from=first,
+            valid_to=last,
+            month_label=periods.month_label_short(year, month_number),
+            source="ree_pvpc",
+            status="confirmed",
+            p1_price=0.0,
+            p2_price=0.0,
+            p3_price=0.0,
+            power_p1_price=float(profiles.get_profile(alternative_profile_id).get("power_p1_price") or 0.0),
+            power_p2_price=float(profiles.get_profile(alternative_profile_id).get("power_p2_price") or 0.0),
+            service_fee_eur_month=float(profiles.get_profile(alternative_profile_id).get("service_fee_eur_month") or 0.0),
+            social_bond_eur_month=float(profiles.get_profile(alternative_profile_id).get("social_bond_eur_month") or 0.0),
+            vat_rate=float(profiles.get_profile(alternative_profile_id).get("vat_rate") or 0.21),
+            electricity_tax_rate=float(
+                profiles.get_profile(alternative_profile_id).get("electricity_tax_rate") or 0.0511269632
+            ),
+        )
+        try:
+            alt_curve = prices.build_month_curve(
+                db, alternative_contract, alternative_price, year, month_number
+            )
+        except pvpc.PvpcError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"No se han podido cargar los precios PVPC: {exc}",
+            ) from exc
+        pvpc_available = alt_curve.coverage > 0
+        missing_hours = alt_curve.missing_hours
+        if is_fallback:
+            notes.append("El precio de Pepe es provisional; la comparación puede variar.")
+        if contract.bono_social_category != "none":
+            notes.append("El bono social solo se aplica a PVPC; la alternativa PVPC lo incluye.")
+        if missing_hours:
+            notes.append(
+                f"Faltan {missing_hours} horas de PVPC; se usa el precio medio disponible."
+            )
+    alternative_bill = tariff.bill_breakdown_hourly(
+        alternative_contract,
+        alternative_price,
+        days,
+        energy_by_hour,
+        alt_curve,
+    )
+    current_total = current_bill["total"]
+    alternative_total = alternative_bill["total"]
+    return {
+        "month": f"{year:04d}-{month_number:02d}",
+        "current_total": current_total,
+        "alternative_total": alternative_total,
+        "savings_eur_month": current_total - alternative_total,
+        "current_label": f"{profile.get('company', contract.provider)} · {profile.get('name', 'Tarifa actual')}",
+        "alternative_label": (
+            "PVPC 2.0TD" if alternative_profile_id == "pvpc_2td" else "Pepe Energy · Tarifa Variable"
+        ),
+        "current_energy_cost": current_bill["energy_cost"],
+        "alternative_energy_cost": alternative_bill["energy_cost"],
+        "pvpc_available": pvpc_available,
+        "missing_hours": missing_hours,
+        "current_bono_social": current_bill.get("bono_social_discount", 0.0),
+        "alternative_bono_social": alternative_bill.get("bono_social_discount", 0.0),
+        "notes": notes,
     }
 
 
@@ -345,8 +622,10 @@ def tariff_proposals(db: Session = Depends(get_db)) -> dict:
 @router.post("/tariff/pepe/fetch")
 async def fetch_pepe(db: Session = Depends(get_db)) -> dict:
     contract = _contract_or_404(db)
+    profile = profiles.get_profile(contract.tariff_profile_id)
+    kind = "fixed" if profile.get("price_source") == "pepe_api_fixed" else "variable"
     try:
-        offer = await pepe.fetch_pepe_last_month()
+        offer = await pepe.fetch_pepe_last_month(kind=kind)
     except pepe.PepeFetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     proposal = db.scalars(
@@ -467,7 +746,7 @@ def list_devices(
         return {"items": [], "summary": {"energy_kwh": 0, "cost": 0, "count": 0}}
     year, month_number = _month(month, contract)
     price, _fallback = _price_for(db, contract, year, month_number)
-    rows, factor, _by_period, _bill = _estimate_rows(db, contract, price, year, month_number)
+    rows, factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     total_cost = sum(est.cost_eur for _device, est in rows)
     total_energy = sum(est.energy_kwh for _device, est in rows)
     items = [
@@ -489,16 +768,8 @@ def list_devices(
 def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(payload.month, contract)
-    price, _fallback = _price_for(db, contract, year, month_number)
     device = _device_from_payload(payload.device)
-    est = estimation.estimate_device(
-        device,
-        contract,
-        price,
-        year,
-        month_number,
-        tariff.calibration_factor(db, contract),
-    )
+    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
     return {
         "energy_kwh": est.energy_kwh,
         "active_kwh": est.active_kwh,
@@ -522,8 +793,7 @@ def create_device(payload: DeviceIn, db: Session = Depends(get_db)) -> dict:
     db.commit()
     db.refresh(device)
     year, month_number = _month(None, contract)
-    price, _fallback = _price_for(db, contract, year, month_number)
-    est = estimation.estimate_device(device, contract, price, year, month_number, tariff.calibration_factor(db, contract))
+    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
     return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
 
 
@@ -537,8 +807,7 @@ def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_d
     db.commit()
     db.refresh(device)
     year, month_number = _month(None, contract)
-    price, _fallback = _price_for(db, contract, year, month_number)
-    est = estimation.estimate_device(device, contract, price, year, month_number, tariff.calibration_factor(db, contract))
+    price, _curve, est = _estimate_one(db, contract, device, year, month_number)
     return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
 
 
@@ -559,8 +828,9 @@ async def dashboard(
 ) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(month, contract)
+    profile = profiles.get_profile(contract.tariff_profile_id)
     price, is_fallback = _price_for(db, contract, year, month_number)
-    rows, factor, by_period, bill = _estimate_rows(db, contract, price, year, month_number)
+    rows, factor, by_period, bill, curve = _estimate_rows(db, contract, price, year, month_number)
     total_cost = sum(est.cost_eur for _device, est in rows)
     total_energy = sum(est.energy_kwh for _device, est in rows)
     items = [
@@ -583,13 +853,23 @@ async def dashboard(
         tz = ZoneInfo(contract.timezone or "Europe/Madrid")
     except Exception:
         tz = ZoneInfo("Europe/Madrid")
-    cheap = periods.next_cheap_windows(
-        datetime.now(tz),
-        country=contract.country,
-        region=contract.region,
-        tz=tz,
-        count=4,
-    )
+    if profile.get("price_source") == "ree_pvpc" and price is not None:
+        future_start = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+        try:
+            future_curve = prices.build_range_curve(
+                db, contract, price, future_start, future_start + timedelta(days=7)
+            )
+            cheap = _curve_cheap_windows(future_curve, tz, count=4, duration_hours=2)
+        except pvpc.PvpcError:
+            cheap = _curve_cheap_windows(curve, tz, count=4, duration_hours=2)
+    else:
+        cheap = periods.next_cheap_windows(
+            datetime.now(tz),
+            country=contract.country,
+            region=contract.region,
+            tz=tz,
+            count=4,
+        )
     esios_entity = _get_setting(db, "esios_entity_id", "")
     esios = {
         "configured": bool(esios_entity),
@@ -624,8 +904,14 @@ async def dashboard(
     totals = {
         "energy_kwh": total_energy,
         "energy_cost": bill["energy_cost"] if bill else 0.0,
+        "energy_cost_original": bill.get("energy_cost_original", 0.0) if bill else 0.0,
         "power_cost": bill["power_cost"] if bill else 0.0,
+        "power_cost_original": bill.get("power_cost_original", 0.0) if bill else 0.0,
         "fees_total": bill["fees_total"] if bill else 0.0,
+        "service_discount": bill.get("service_discount", 0.0) if bill else 0.0,
+        "bono_social_discount": bill.get("bono_social_discount", 0.0) if bill else 0.0,
+        "bono_social_percentage": bill.get("bono_social_percentage", 0.0) if bill else 0.0,
+        "bono_social_applied": bill.get("bono_social_applied", False) if bill else False,
         "electricity_tax": bill["electricity_tax"] if bill else 0.0,
         "vat": bill["vat"] if bill else 0.0,
         "total": bill["total"] if bill else 0.0,
@@ -636,6 +922,8 @@ async def dashboard(
         "calibration_factor": factor,
         "confidence": "alta" if score >= 80 else "media" if score >= 55 else "baja",
         "confidence_score": round(score, 0),
+        "missing_hours": curve.missing_hours if profile.get("price_source") == "ree_pvpc" else 0,
+        "price_coverage": curve.coverage,
     }
     period_rows = []
     for p in periods.PERIOD_ORDER:
@@ -644,8 +932,8 @@ async def dashboard(
             {
                 "id": p,
                 "name": periods.PERIOD_NAMES[p],
-                "energy_kwh": by_period.get(p, 0.0),
-                "cost": bill["energy_prices"].get(p, 0.0) * by_period.get(p, 0.0) if bill else 0.0,
+                "energy_kwh": bill["by_period"].get(p, 0.0) if bill else by_period.get(p, 0.0),
+                "cost": bill["cost_by_period"].get(p, 0.0) if bill else 0.0,
                 "price": price_value,
             }
         )
@@ -653,7 +941,9 @@ async def dashboard(
         "month": f"{year:04d}-{month_number:02d}",
         "month_label": periods.month_label_es(year, month_number),
         "contract": ContractOut.model_validate(contract).model_dump(mode="json"),
+        "profile": profile,
         "price": tariff.price_to_dict(price, year, month_number, is_fallback),
+        "price_mode": "hourly" if profile.get("price_source") == "ree_pvpc" else "period",
         "totals": totals,
         "by_period": period_rows,
         "devices": items,
@@ -669,7 +959,8 @@ async def dashboard(
             "calibration_factor": factor,
         },
         "setup": {
-            "needs_price": price is None,
+            "needs_price": price is None
+            or (profile.get("price_source") == "ree_pvpc" and curve.coverage <= 0),
             "needs_devices": len(items) == 0,
             "needs_calibration": calibration is None,
         },
@@ -681,7 +972,7 @@ def list_recommendations(db: Session = Depends(get_db)) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(None, contract)
     price, is_fallback = _price_for(db, contract, year, month_number)
-    rows, _factor, _by_period, _bill = _estimate_rows(db, contract, price, year, month_number)
+    rows, _factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     calibration = tariff.get_latest_calibration(db, contract)
     recs = recommendations.generate_recommendations(
         db,
@@ -821,7 +1112,7 @@ def create_calibration(payload: CalibrationIn, db: Session = Depends(get_db)) ->
     contract = _contract_or_404(db)
     year, month_number = periods.parse_month(payload.month)
     price, _is_fallback = _price_for(db, contract, year, month_number)
-    rows, _factor, by_period, bill = _estimate_rows(db, contract, price, year, month_number)
+    rows, _factor, by_period, bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     estimated_kwh = sum(est.energy_kwh for _device, est in rows)
     if estimated_kwh <= 0:
         raise HTTPException(

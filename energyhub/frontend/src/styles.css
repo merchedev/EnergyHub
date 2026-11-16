@@ -1319,6 +1319,45 @@ button {
   font-weight: 700;
 }
 
+.advanced-block {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  padding: 0 12px;
+}
+
+.advanced-block > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.advanced-block > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-block[open] > summary {
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.advanced-block[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.comparison-win {
+  border-color: rgba(85, 217, 138, 0.35) !important;
+  background: linear-gradient(135deg, var(--success-soft), transparent 65%), var(--bg-soft) !important;
+}
+
 .changelog-list {
   margin: 0;
   padding-left: 18px;

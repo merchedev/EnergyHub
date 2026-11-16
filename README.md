@@ -10,15 +10,21 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 
 ## Qué incluye esta primera versión
 
-- Contrato configurable: potencia P1/P2, cuotas, bono social, IVA e impuesto eléctrico.
-- Plantilla de Pepe Energy Tarifa Variable y lectura de precios desde su API pública con confirmación.
-- Precios mensuales por tramo, calendario valle/llano/punta y festivos.
+- Selector de compañía y tarifa: Pepe Variable, Pepe Estable, PVPC y catálogo comunitario/manual.
+- Contrato configurable: potencia P1/P2, cuotas, financiación del bono social, IVA e impuesto eléctrico.
+- Autorelleno de precios, cuotas e impuestos desde el perfil de tarifa.
+- Pepe Energy con precios automáticos desde su API pública y confirmación.
+- PVPC 2.0TD con precios horarios de la API pública de REE, sin token.
+- Toggle de cliente Pepephone: cuota de servicio de Pepe a 0 €/mes.
+- Descuento del bono social para PVPC, con categorías y límite anual de energía.
+- Precios mensuales por tramo o precios horarios, calendario y festivos.
 - Dispositivos sin sensores: siempre enchufado, horas al día, ciclos o entidad de HA.
-- Cálculo de energía y coste por tramo, con rango mínimo/máximo y confianza.
+- Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
 - Factura estimada, proyección y calibración con la factura real.
+- Comparador Pepe vs PVPC con el mismo consumo y potencia.
 - Recomendaciones con ahorro estimado y YAML de automatización.
 - Creación de automatizaciones en HA con confirmación y opción de deshacer (si HA está conectado).
-- Sensor ESIOS opcional como referencia de mercado, sin mezclarlo con la factura de Pepe.
+- Sensor ESIOS opcional como referencia de mercado.
 - Página **Novedades**: muestra solo las versiones posteriores a la instalada, no todo el historial.
 - Datos locales en SQLite, dentro de `/data`.
 
@@ -79,7 +85,7 @@ Home Assistant
     └── Recomendaciones y automatizaciones
 ```
 
-Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimation-and-tariffs.md`](docs/estimation-and-tariffs.md) y [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimation-and-tariffs.md`](docs/estimation-and-tariffs.md), [`docs/tariff-catalog.md`](docs/tariff-catalog.md) y [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### Capturas
 
@@ -97,7 +103,7 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 
 ## Estado del proyecto
 
-Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura y recomendaciones está probado con la API real de Pepe y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. El comparador completo Pepe vs PVPC/ESIOS, los sensores nativos y el soporte multi-país llegarán en siguientes fases.
+Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura, PVPC, bono social, comparador y recomendaciones está probado con la API real de Pepe, la API pública de REE y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. Los sensores nativos, el historial real de entidades y el soporte multi-país llegarán en siguientes fases.
 
 El Dockerfile y la estructura de app están incluidos. La imagen se compila correctamente en CI (GitHub Actions); la instalación real en HA OS queda por validar en tu instalación.
 

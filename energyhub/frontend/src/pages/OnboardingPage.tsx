@@ -1,16 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
   CalendarClock,
   Check,
+  ChevronDown,
   Lightbulb,
   PlugZap,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react'
 import { api } from '../api'
 import { BoltIcon } from '../components/Icon'
-import { Button, ErrorBox, Field, Input, useToast } from '../components/ui'
+import { Button, ErrorBox, Field, Input, Loading, Select, Toggle, useToast } from '../components/ui'
+import { useApi } from '../hooks/useApi'
+import type { BonoSocialCategory, TariffProfile, TariffsResponse } from '../types'
 
 const FEATURES = [
   {
@@ -35,8 +39,17 @@ const FEATURES = [
   },
 ]
 
+const BONO_LIMITS = [
+  { value: '1587', label: '1.587 kWh/año · una o dos personas' },
+  { value: '2222', label: '2.222 kWh/año · tres personas, pensionistas o dos con un menor' },
+  { value: '2698', label: '2.698 kWh/año · cuatro personas o tres con dos menores' },
+  { value: '4761', label: '4.761 kWh/año · cinco o más, familias numerosas…' },
+]
+
 export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void> }) {
   const { showToast } = useToast()
+  const { data: tariffData, loading: tariffsLoading, error: tariffsError } = useApi<TariffsResponse>('/tariffs')
+  const [selectedProfileId, setSelectedProfileId] = useState('pepe_variable')
   const [saving, setSaving] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,12 +63,71 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
     meter_rent_eur_month: '0.81',
     vat_rate: '0.21',
     electricity_tax_rate: '0.0511269632',
+    has_pepephone_discount: false,
+    bono_social_category: 'none' as BonoSocialCategory,
+    bono_social_energy_limit_kwh: '1587',
   })
 
-  const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }))
+  const profiles = tariffData?.profiles ?? []
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0],
+    [profiles, selectedProfileId],
+  )
+  const companies = useMemo(() => {
+    const seen = new Map<string, TariffProfile>()
+    for (const profile of profiles) {
+      if (!seen.has(profile.company)) seen.set(profile.company, profile)
+    }
+    return [...seen.values()]
+  }, [profiles])
+
+  useEffect(() => {
+    if (!selectedProfile) return
+    setForm((current) => ({
+      ...current,
+      provider: selectedProfile.company,
+      service_fee_eur_month: String(selectedProfile.service_fee_eur_month),
+      social_bond_eur_month: String(selectedProfile.social_bond_eur_month),
+      meter_rent_eur_month: String(selectedProfile.meter_rent_eur_month),
+      vat_rate: String(selectedProfile.vat_rate),
+      electricity_tax_rate: String(selectedProfile.electricity_tax_rate),
+      has_pepephone_discount: selectedProfile.supports_pepephone_discount
+        ? current.has_pepephone_discount
+        : false,
+      bono_social_category: selectedProfile.bono_social_eligible
+        ? current.bono_social_category
+        : 'none',
+    }))
+  }, [selectedProfile])
+
+  useEffect(() => {
+    if (!selectedProfileId && profiles.length > 0) {
+      setSelectedProfileId(profiles[0].id)
+    }
+  }, [profiles, selectedProfileId])
+
+  const set = (key: keyof typeof form, value: string | boolean) =>
+    setForm((current) => ({ ...current, [key]: value }))
+
+  const selectCompany = (company: string) => {
+    const profile = companies.find((item) => item.company === company)
+    if (profile) setSelectedProfileId(profile.id)
+  }
+
+  const togglePepephone = (value: boolean) => {
+    setForm((current) => ({
+      ...current,
+      has_pepephone_discount: value,
+      service_fee_eur_month:
+        value && selectedProfile?.supports_pepephone_discount
+          ? '0'
+          : String(selectedProfile?.service_fee_eur_month ?? 0),
+    }))
+  }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (!selectedProfile) return
     setError(null)
     setSaving(true)
     try {
@@ -64,8 +136,9 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
         provider: form.provider,
         country: 'ES',
         timezone: 'Europe/Madrid',
-        tariff_type: form.provider.toLowerCase().includes('pepe') ? 'pepe_variable' : 'manual',
-        access_toll: '2.0TD',
+        tariff_type: selectedProfile.kind,
+        tariff_profile_id: selectedProfile.id,
+        access_toll: selectedProfile.access_toll,
         segment: '1',
         power_p1_kw: Number(form.power_p1_kw),
         power_p2_kw: Number(form.power_p2_kw),
@@ -74,20 +147,23 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
         meter_rent_eur_month: Number(form.meter_rent_eur_month),
         vat_rate: Number(form.vat_rate),
         electricity_tax_rate: Number(form.electricity_tax_rate),
+        has_pepephone_discount: form.has_pepephone_discount,
+        bono_social_category: form.bono_social_category,
+        bono_social_energy_limit_kwh: Number(form.bono_social_energy_limit_kwh),
         currency: 'EUR',
         billing_day: 1,
       })
-      // Intentamos dejar una propuesta de precios preparada; si falla, el usuario
-      // podrá introducirlos manualmente desde Tarifa.
-      if (form.provider.toLowerCase().includes('pepe')) {
+      if (selectedProfile.price_source.startsWith('pepe_api')) {
         try {
           await api.fetchPepe()
           showToast('Contrato creado. Revisa y confirma los precios de Pepe.')
         } catch {
-          showToast('Contrato creado. Añade los precios de tu tarifa en Tarifa.', 'info')
+          showToast('Contrato creado. Confirma los precios en Tarifa.', 'info')
         }
+      } else if (selectedProfile.price_source === 'ree_pvpc') {
+        showToast('Contrato PVPC creado. Cargando precios horarios…')
       } else {
-        showToast('Contrato creado. Añade los precios de tu tarifa en Tarifa.', 'info')
+        showToast('Contrato creado. Introduce los precios de tu tarifa en Tarifa.', 'info')
       }
       await onComplete()
     } catch (err) {
@@ -108,6 +184,17 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
     } finally {
       setDemoLoading(false)
     }
+  }
+
+  if (tariffsLoading || !tariffData) {
+    return (
+      <div className="onboarding">
+        <div style={{ width: 360 }}>
+          <Loading label="Cargando tarifas…" />
+          {tariffsError ? <ErrorBox message={tariffsError} /> : null}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -131,19 +218,12 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
             <em>Tú decides cómo.</em>
           </h1>
           <p className="onboarding-sub">
-            Convierte Home Assistant en un panel de ahorro: estima la factura, entiende qué aparato gasta
-            más y descubre las horas más baratas de tu tarifa.
+            Elige tu compañía y tarifa. La app rellena los precios, la cuota y los impuestos; tú solo
+            confirmas la potencia y los precios.
           </p>
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginTop: 18,
-            }}
-          >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 18 }}>
             <span className="badge badge-green">
-              <Check size={12} /> Sin sensores obligatorios
+              <Check size={12} /> Precios Pepe y PVPC automáticos
             </span>
             <span className="badge badge-green">
               <Check size={12} /> Datos locales
@@ -192,8 +272,7 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
               Configura tu contrato
             </h2>
             <p className="small muted" style={{ marginTop: 0 }}>
-              Viene precargado con la Tarifa Variable de Pepe Energy y 2.0TD. Puedes ajustar todos los
-              valores.
+              Empieza por tu compañía. Los campos avanzados ya vendrán rellenos.
             </p>
             {error ? <ErrorBox message={error} /> : null}
             <form onSubmit={submit} style={{ display: 'grid', gap: 13, marginTop: 14 }}>
@@ -202,12 +281,51 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
                   <Input value={form.name} onChange={(event) => set('name', event.target.value)} required />
                 </Field>
                 <Field label="Comercializadora">
-                  <Input
-                    value={form.provider}
-                    onChange={(event) => set('provider', event.target.value)}
-                    required
-                  />
+                  <Select
+                    value={selectedProfile?.company ?? ''}
+                    onChange={(event) => selectCompany(event.target.value)}
+                  >
+                    {companies.map((company) => (
+                      <option key={company.company} value={company.company}>
+                        {company.company}
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
+              </div>
+              <Field
+                label="Tarifa"
+                hint={
+                  selectedProfile
+                    ? `${selectedProfile.notes}${selectedProfile.last_updated ? ` Actualizado: ${selectedProfile.last_updated}.` : ''}`
+                    : undefined
+                }
+              >
+                <Select
+                  value={selectedProfileId}
+                  onChange={(event) => setSelectedProfileId(event.target.value)}
+                >
+                  {profiles
+                    .filter((profile) => profile.company === selectedProfile?.company)
+                    .map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                </Select>
+              </Field>
+              <div className="flex gap-8" style={{ flexWrap: 'wrap' }}>
+                {selectedProfile?.price_source.startsWith('pepe_api') ? (
+                  <span className="badge badge-green">
+                    <Zap size={11} /> Precios automáticos de Pepe
+                  </span>
+                ) : selectedProfile?.price_source === 'ree_pvpc' ? (
+                  <span className="badge badge-green">
+                    <Zap size={11} /> PVPC horario automático
+                  </span>
+                ) : (
+                  <span className="badge badge-yellow">Precios manuales · confirma tu factura</span>
+                )}
               </div>
               <div className="form-grid">
                 <Field label="Potencia P1 (kW)" hint="Punta y llano">
@@ -231,57 +349,105 @@ export function OnboardingPage({ onComplete }: { onComplete: () => Promise<void>
                   />
                 </Field>
               </div>
-              <div className="form-grid">
-                <Field label="Cuota de servicio (€/mes)" hint="Impuestos incluidos">
-                  <Input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={form.service_fee_eur_month}
-                    onChange={(event) => set('service_fee_eur_month', event.target.value)}
-                  />
-                </Field>
-                <Field label="Bono social (€/mes)" hint="Impuestos incluidos">
-                  <Input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={form.social_bond_eur_month}
-                    onChange={(event) => set('social_bond_eur_month', event.target.value)}
-                  />
-                </Field>
-              </div>
-              <div className="form-grid-3">
-                <Field label="Alquiler contador (€/mes)">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.meter_rent_eur_month}
-                    onChange={(event) => set('meter_rent_eur_month', event.target.value)}
-                  />
-                </Field>
-                <Field label="IVA" hint="21 % por defecto">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="1"
-                    value={form.vat_rate}
-                    onChange={(event) => set('vat_rate', event.target.value)}
-                  />
-                </Field>
-                <Field label="Impuesto eléctrico" hint="5,113 % por defecto">
-                  <Input
-                    type="number"
-                    step="any"
-                    min="0"
-                    max="1"
-                    value={form.electricity_tax_rate}
-                    onChange={(event) => set('electricity_tax_rate', event.target.value)}
-                  />
-                </Field>
-              </div>
+              {selectedProfile?.supports_pepephone_discount ? (
+                <Toggle
+                  checked={form.has_pepephone_discount}
+                  onChange={togglePepephone}
+                  label="Soy cliente de Pepephone"
+                  hint="La cuota de servicio de Pepe pasa a 0 €/mes."
+                />
+              ) : null}
+              {selectedProfile?.bono_social_eligible ? (
+                <div className="banner accent">
+                  <Lightbulb size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    <strong>Bono social (solo PVPC).</strong> Si eres beneficiario, indica la categoría y el
+                    límite anual. La financiación regulada ya está incluida en la factura.
+                  </span>
+                </div>
+              ) : null}
+              {selectedProfile?.bono_social_eligible ? (
+                <div className="form-grid">
+                  <Field label="Categoría de bono social">
+                    <Select
+                      value={form.bono_social_category}
+                      onChange={(event) => set('bono_social_category', event.target.value)}
+                    >
+                      <option value="none">No soy beneficiario</option>
+                      <option value="vulnerable">Vulnerable · 42,5 %</option>
+                      <option value="severe">Vulnerable severo · 57,5 %</option>
+                      <option value="exclusion">Riesgo de exclusión · 100 %</option>
+                    </Select>
+                  </Field>
+                  <Field label="Límite anual de energía">
+                    <Select
+                      value={form.bono_social_energy_limit_kwh}
+                      onChange={(event) => set('bono_social_energy_limit_kwh', event.target.value)}
+                    >
+                      {BONO_LIMITS.map((limit) => (
+                        <option key={limit.value} value={limit.value}>
+                          {limit.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              ) : null}
+              <details className="advanced-block">
+                <summary>
+                  <span>Avanzado: cuota, bono social, alquiler e impuestos</span>
+                  <ChevronDown size={14} />
+                </summary>
+                <div className="form-grid mt-12">
+                  <Field label="Cuota de servicio (€/mes)" hint="Impuestos incluidos">
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={form.service_fee_eur_month}
+                      onChange={(event) => set('service_fee_eur_month', event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Financiación del bono social (€/mes)" hint="Impuestos incluidos">
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={form.social_bond_eur_month}
+                      onChange={(event) => set('social_bond_eur_month', event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Alquiler de contador (€/mes)">
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={form.meter_rent_eur_month}
+                      onChange={(event) => set('meter_rent_eur_month', event.target.value)}
+                    />
+                  </Field>
+                  <Field label="IVA" hint="21 % por defecto">
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      max="1"
+                      value={form.vat_rate}
+                      onChange={(event) => set('vat_rate', event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Impuesto eléctrico" hint="5,113 % por defecto">
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      max="1"
+                      value={form.electricity_tax_rate}
+                      onChange={(event) => set('electricity_tax_rate', event.target.value)}
+                    />
+                  </Field>
+                </div>
+              </details>
               <Button type="submit" variant="primary" className="w-full" disabled={saving}>
                 {saving ? 'Guardando…' : 'Crear contrato y empezar'}
               </Button>

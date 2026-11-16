@@ -30,6 +30,7 @@ class Contract(Base):
     region: Mapped[str | None] = mapped_column(String(8), nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Madrid")
     tariff_type: Mapped[str] = mapped_column(String(40), default="pepe_variable")
+    tariff_profile_id: Mapped[str] = mapped_column(String(60), default="pepe_variable")
     access_toll: Mapped[str] = mapped_column(String(20), default="2.0TD")
     segment: Mapped[str | None] = mapped_column(String(20), default="1")
     power_p1_kw: Mapped[float] = mapped_column(Float, default=4.6)
@@ -40,6 +41,9 @@ class Contract(Base):
     other_fees_eur_month: Mapped[float] = mapped_column(Float, default=0.0)
     vat_rate: Mapped[float] = mapped_column(Float, default=0.21)
     electricity_tax_rate: Mapped[float] = mapped_column(Float, default=0.0511269632)
+    has_pepephone_discount: Mapped[bool] = mapped_column(Boolean, default=False)
+    bono_social_category: Mapped[str] = mapped_column(String(20), default="none")
+    bono_social_energy_limit_kwh: Mapped[float] = mapped_column(Float, default=1587.0)
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     billing_day: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -140,6 +144,18 @@ class Calibration(Base):
     factor: Mapped[float] = mapped_column(Float, default=1.0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class HourlyPrice(Base):
+    __tablename__ = "hourly_prices"
+    __table_args__ = (UniqueConstraint("source", "timestamp", name="uq_hourly_price_source_ts"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(40), default="ree_pvpc", index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    price_eur_kwh: Mapped[float] = mapped_column(Float)
+    period: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Recommendation(Base):

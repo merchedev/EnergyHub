@@ -18,6 +18,7 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY CHANGELOG.md ./CHANGELOG.md
+COPY tariffs ./tariffs
 COPY --from=frontend /build/dist ./static
 EXPOSE 8099
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

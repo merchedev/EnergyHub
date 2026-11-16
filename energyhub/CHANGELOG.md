@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 - 2026-11-16
+
+- Selector de compañía y tarifa con perfiles: Pepe Variable, Pepe Estable, PVPC y catálogo comunitario/manual.
+- Autorelleno de cuota, financiación del bono social, alquiler de contador, impuestos y potencia.
+- Toggle de cliente Pepephone: cuota de servicio de Pepe a 0 €/mes.
+- PVPC 2.0TD con precios horarios de la API pública de REE, sin token.
+- Coste de dispositivos calculado hora a hora, no solo por tramo.
+- Curva PVPC de 48 h, ventanas baratas y planificador de cargas.
+- Descuento del bono social para PVPC: 42,5 %, 57,5 % o 100 %, con límite anual de energía.
+- Aviso y recomendación cuando el bono social no se aplica a una tarifa de mercado libre.
+- Comparador Pepe vs PVPC con el mismo consumo, potencia, impuestos y bono social.
+- Catálogo comunitario de perfiles de otras comercializadoras con precios orientativos y fecha de actualización.
+- Migración automática de contratos de versiones anteriores.
+- Tests de perfiles, Pepephone, PVPC, bono social, facturación horaria y comparador.
+
 ## 0.1.2 - 2026-11-16
 
 - Corrige el arranque del contenedor cuando no existe `.env` y la ruta no tiene cuatro niveles de padres.

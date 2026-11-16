@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CircleDollarSign,
   Gauge,
+  Info,
   Lightbulb,
   Plug,
   RefreshCw,
@@ -80,7 +81,7 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
   }
 
   const hasDevices = data.devices.length > 0
-  const needsPrice = !data.price
+  const needsPrice = data.setup.needs_price || !data.price
   const priceFallback = data.price?.is_fallback
   const averagePrice = data.totals.energy_kwh > 0 ? data.totals.variable_cost / data.totals.energy_kwh : 0
   const fakePrice = needsPrice
@@ -142,6 +143,26 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
         </Banner>
       ) : null}
 
+      {data.price_mode === 'hourly' && (data.totals.missing_hours ?? 0) > 0 ? (
+        <Banner tone="warning">
+          <Zap size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>PVPC incompleto.</strong> Faltan {data.totals.missing_hours} horas de precio para este
+            mes; se usa el precio medio disponible. La estimación puede variar cuando REE publique el resto.
+          </span>
+        </Banner>
+      ) : null}
+
+      {data.contract.bono_social_category !== 'none' && !data.profile.bono_social_eligible ? (
+        <Banner tone="warning">
+          <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Bono social no aplicado.</strong> El descuento solo se aplica al PVPC. Con tu tarifa
+            actual pagas la financiación regulada; el comparador muestra cuánto ahorrarías con PVPC.
+          </span>
+        </Banner>
+      ) : null}
+
       <div className="hero mt-16">
         <div className="hero-content">
           <div>
@@ -149,16 +170,34 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
               <span>Factura estimada · {data.month_label}</span>
               {data.price ? (
                 <Badge tone={priceFallback ? 'yellow' : 'green'}>
-                  {priceFallback ? 'Provisional' : 'Precio confirmado'}
+                  {data.price_mode === 'hourly'
+                    ? 'PVPC horario'
+                    : priceFallback
+                      ? 'Provisional'
+                      : 'Precio confirmado'}
                 </Badge>
               ) : (
                 <Badge tone="neutral">Sin precio</Badge>
               )}
               {data.price ? (
-                <Badge tone="neutral">{data.price.source === 'pepe_api' ? 'Pepe API' : 'Manual'}</Badge>
+                <Badge tone="neutral">
+                  {data.price.source === 'pepe_api'
+                    ? 'Pepe API'
+                    : data.price.source === 'ree_pvpc'
+                      ? 'REE'
+                      : 'Manual'}
+                </Badge>
               ) : (
                 <Badge tone="neutral">Sin precio</Badge>
               )}
+              {data.profile.supports_pepephone_discount && data.contract.has_pepephone_discount ? (
+                <Badge tone="green">Pepephone −4 €</Badge>
+              ) : null}
+              {(data.totals.bono_social_discount ?? 0) > 0 ? (
+                <Badge tone="green">
+                  Bono social −{eur(data.totals.bono_social_discount)}
+                </Badge>
+              ) : null}
             </div>
             <p className="hero-label">Total con potencia, cuotas e impuestos</p>
             <div className="hero-amount">
@@ -240,7 +279,11 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
             <div className="card-header">
               <div>
                 <h2 className="card-title">Coste por tramo</h2>
-                <p className="card-subtitle">Cómo se reparte tu consumo entre valle, llano y punta.</p>
+                <p className="card-subtitle">
+                  {data.price_mode === 'hourly'
+                    ? 'En PVPC el precio cambia cada hora; aquí ves el reparto y el precio medio por tramo.'
+                    : 'Cómo se reparte tu consumo entre valle, llano y punta.'}
+                </p>
               </div>
               <PeriodLegend />
             </div>
@@ -279,11 +322,22 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
                   height={9}
                 />
               </div>
+              {(data.totals.bono_social_discount ?? 0) > 0 ? (
+                <div className="banner mt-12" style={{ background: 'var(--bg-soft)' }}>
+                  <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    El bono social (−{eur(data.totals.bono_social_discount)}) se aplica al total de la
+                    factura; los costes por tramo y por dispositivo se muestran antes del descuento.
+                  </span>
+                </div>
+              ) : null}
               <div className="between mt-12">
                 <span className="small muted">
                   {needsPrice
                     ? 'Confirma los precios para ver el coste por tramo.'
-                    : 'Los importes son coste de energía; los fijos se muestran aparte.'}
+                    : data.price_mode === 'hourly'
+                      ? 'El coste real se calcula con la curva horaria; los precios mostrados son medias por tramo.'
+                      : 'Los importes son coste de energía; los fijos se muestran aparte.'}
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => navigate('/schedule')}>
                   Ver calendario <ArrowRight size={13} />
@@ -482,8 +536,10 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
                 <>
                   <div className="big-number">{pricePerKwh(data.esios.price)}</div>
                   <div className="small muted mt-8">
-                    Precio actual de la entidad {data.esios.entity_id}. Es una referencia de mercado:
-                    tu factura de Pepe usa los precios mensuales por tramo.
+                    Precio actual de la entidad {data.esios.entity_id}. Es una referencia de mercado
+                    {data.price_mode === 'hourly'
+                      ? '; tu factura PVPC se calcula con la curva horaria de REE.'
+                      : '; tu factura de Pepe usa los precios mensuales por tramo.'}
                   </div>
                 </>
               ) : data.esios.configured ? (
@@ -494,7 +550,7 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
               ) : (
                 <div className="small muted">
                   Si tienes Conecta ESIOS, puedes seleccionar su sensor en Ajustes para ver aquí el precio
-                  de mercado. El comparador Pepe vs PVPC llegará en la fase 2.
+                  de mercado. Puedes comparar tu tarifa con PVPC en Tarifa → Comparador.
                   <div className="mt-12">
                     <Button size="sm" variant="ghost" onClick={() => navigate('/settings')}>
                       Configurar sensor <ArrowRight size={13} />

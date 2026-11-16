@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..catalog import get_catalog_item
 from ..models import Contract, Device, TariffPrice
 from . import periods
+from .prices import PriceCurve, PricePoint
 from .tariff import period_prices
 
 
@@ -23,6 +24,7 @@ class DeviceEstimate:
     cost_by_period: dict[str, float] = field(default_factory=lambda: {"P1": 0.0, "P2": 0.0, "P3": 0.0})
     confidence: str = "media"
     notes: list[str] = field(default_factory=list)
+    hourly: dict[datetime, float] = field(default_factory=dict)
 
     def period_rows(self, price: TariffPrice | None) -> list[dict]:
         prices = period_prices(price) if price is not None else {p: 0.0 for p in periods.PERIOD_ORDER}
@@ -250,3 +252,99 @@ def estimate_device(
 
 def device_windows(device: Device) -> list[dict]:
     return _parse_windows(device)
+
+
+def estimate_device_hourly(
+    device: Device,
+    contract: Contract,
+    curve: PriceCurve,
+    year: int,
+    month: int,
+    calibration: float = 1.0,
+) -> DeviceEstimate:
+    """Estimate a device by allocating its energy to each local hour."""
+    try:
+        tz = ZoneInfo(contract.timezone or "Europe/Madrid")
+    except Exception:
+        tz = ZoneInfo("Europe/Madrid")
+    points = curve.points
+    days = periods.month_days(year, month)
+    notes: list[str] = []
+    if not points:
+        return DeviceEstimate(notes=["No hay precios para este mes."])
+    hourly: dict[datetime, float] = {point.local_dt: 0.0 for point in points}
+    active_total, _unused, active_notes = _active_energy(device, days)
+    active_hours = _active_hours_per_day(device)
+    standby_total = _standby_energy(device, days, active_hours)
+    notes.extend(active_notes)
+    factor = max(0.0, float(calibration or 1.0))
+    if device.mode == "always_on":
+        total = (active_total + standby_total) * factor
+        per_hour = total / len(points)
+        for point in points:
+            hourly[point.local_dt] += per_hour
+    else:
+        windows = _parse_windows(device)
+        if not windows:
+            windows = [{"start": "18:00", "end": "22:00", "weight": 1.0}]
+            notes.append("Sin franja típica: se usa de 18:00 a 22:00 como aproximación.")
+        total_weight = sum(max(0.0, float(window.get("weight", 1.0))) for window in windows) or 1.0
+        for day_offset in range(days):
+            day = date(year, month, 1) + timedelta(days=day_offset)
+            daily_active = (active_total / days) if days else 0.0
+            for window in windows:
+                share = max(0.0, float(window.get("weight", 1.0))) / total_weight
+                energy_share = daily_active * share * factor
+                fractions = periods.window_hour_fractions(
+                    day, window["start"], window["end"], tz=tz
+                )
+                for hour_dt, fraction in fractions.items():
+                    if hour_dt in hourly:
+                        hourly[hour_dt] += energy_share * fraction
+        if standby_total > 0:
+            per_hour = standby_total * factor / len(points)
+            for point in points:
+                hourly[point.local_dt] += per_hour
+        notes.append(
+            "Estimación con franja típica de "
+            + ", ".join(f"{window['start']}–{window['end']}" for window in windows)
+            + "."
+        )
+    by_period = {p: 0.0 for p in periods.PERIOD_ORDER}
+    cost_by_period = {p: 0.0 for p in periods.PERIOD_ORDER}
+    price_by_hour: dict[datetime, PricePoint] = {point.local_dt: point for point in points}
+    total_cost = 0.0
+    for hour_dt, energy in hourly.items():
+        point = price_by_hour.get(hour_dt)
+        if point is None:
+            continue
+        by_period[point.period] += energy
+        cost_by_period[point.period] += energy * point.price
+        total_cost += energy * point.price
+    total_energy = sum(hourly.values())
+    active_scaled = active_total * factor
+    standby_scaled = standby_total * factor
+    if device.mode == "always_on" or total_energy <= 0:
+        min_cost = max_cost = total_cost
+    else:
+        available_prices = [point.price for point in points if point.price > 0]
+        min_cost = total_energy * min(available_prices) if available_prices else 0.0
+        max_cost = total_energy * max(available_prices) if available_prices else 0.0
+    confidence = _confidence(device)
+    if curve.source == "ree_pvpc":
+        notes.append("Coste calculado con precios PVPC horarios.")
+    if factor != 1.0:
+        notes.append(f"Calibrado con factura: factor {factor:.2f}.")
+    return DeviceEstimate(
+        energy_kwh=total_energy,
+        active_kwh=active_scaled,
+        standby_kwh=standby_scaled,
+        cost_eur=total_cost,
+        min_cost_eur=min_cost,
+        max_cost_eur=max_cost,
+        by_period=by_period,
+        cost_by_period=cost_by_period,
+        confidence=confidence,
+        notes=notes,
+        hourly=hourly,
+    )

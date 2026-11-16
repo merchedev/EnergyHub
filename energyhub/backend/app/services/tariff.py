@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Calibration, Contract, TariffPrice
+from . import profiles
 from .periods import PERIOD_NAMES, PERIOD_ORDER, month_bounds
+
+if TYPE_CHECKING:
+    from .prices import PriceCurve
 
 
 class NoPriceError(Exception):
@@ -20,15 +25,22 @@ def get_active_contract(db: Session) -> Contract | None:
 
 
 def get_price_for_month(
-    db: Session, contract: Contract, year: int, month: int
+    db: Session,
+    contract: Contract,
+    year: int,
+    month: int,
+    source: str | None = None,
 ) -> tuple[TariffPrice | None, bool]:
     first, last = month_bounds(year, month)
+    conditions = [
+        TariffPrice.contract_id == contract.id,
+        TariffPrice.valid_from <= last,
+    ]
+    if source:
+        conditions.append(TariffPrice.source == source)
     price = db.scalars(
         select(TariffPrice)
-        .where(
-            TariffPrice.contract_id == contract.id,
-            TariffPrice.valid_from <= last,
-        )
+        .where(*conditions)
         .order_by(TariffPrice.valid_from.desc())
     ).first()
     if price is None:
@@ -92,8 +104,8 @@ def effective_fees(contract: Contract, price: TariffPrice | None) -> dict[str, f
     return {
         "service_fee": service_fee,
         "social_bond": social_bond,
-        "meter_rent": float(contract.meter_rent_eur_month),
-        "other_fees": float(contract.other_fees_eur_month),
+        "meter_rent": float(contract.meter_rent_eur_month or 0.0),
+        "other_fees": float(contract.other_fees_eur_month or 0.0),
     }
 
 
@@ -144,6 +156,111 @@ def fixed_breakdown(contract: Contract, price: TariffPrice | None, days: int) ->
     return bill_breakdown(contract, price, days, {"P1": 0.0, "P2": 0.0, "P3": 0.0})
 
 
+BONO_SOCIAL_PERCENTAGES = {
+    "none": 0.0,
+    "vulnerable": 0.425,
+    "severe": 0.575,
+    "exclusion": 1.0,
+}
+
+
+def bill_breakdown_hourly(
+    contract: Contract,
+    price: TariffPrice | None,
+    days: int,
+    energy_by_hour: dict[datetime, float],
+    curve: PriceCurve,
+) -> dict:
+    """Full bill using an hourly energy profile and a price curve."""
+    if price is None:
+        raise NoPriceError("No hay precios de energía para este mes")
+    profile = profiles.get_profile(contract.tariff_profile_id)
+    price_by_hour = {point.local_dt: point for point in curve.points}
+    energy_kwh = 0.0
+    energy_cost_original = 0.0
+    by_period = {p: 0.0 for p in PERIOD_ORDER}
+    cost_by_period = {p: 0.0 for p in PERIOD_ORDER}
+    for hour_dt, energy in energy_by_hour.items():
+        point = price_by_hour.get(hour_dt)
+        if point is None or energy <= 0:
+            continue
+        energy_kwh += energy
+        by_period[point.period] += energy
+        cost = energy * point.price
+        energy_cost_original += cost
+        cost_by_period[point.period] += cost
+    power_cost_original = (
+        float(contract.power_p1_kw) * float(price.power_p1_price)
+        + float(contract.power_p2_kw) * float(price.power_p2_price)
+    ) * max(0, days)
+    fee_values = effective_fees(contract, price)
+    service_fee_original = fee_values["service_fee"]
+    service_discount = 0.0
+    if bool(contract.has_pepephone_discount) and bool(profile.get("supports_pepephone_discount")):
+        service_discount = service_fee_original
+        service_fee = 0.0
+    else:
+        service_fee = service_fee_original
+    fees_total = (
+        service_fee
+        + fee_values["social_bond"]
+        + fee_values["meter_rent"]
+        + fee_values["other_fees"]
+    )
+    bono_category = contract.bono_social_category or "none"
+    bono_pct = BONO_SOCIAL_PERCENTAGES.get(bono_category, 0.0)
+    bono_social_discount = 0.0
+    bono_social_eligible = bool(profile.get("bono_social_eligible"))
+    bono_social_applied = bono_social_eligible and bono_pct > 0
+    if bono_social_applied:
+        monthly_limit = max(0.0, float(contract.bono_social_energy_limit_kwh or 0.0)) / 365.0 * days
+        discountable_ratio = 1.0
+        if energy_kwh > 0:
+            discountable_ratio = min(1.0, monthly_limit / energy_kwh)
+        energy_discount = energy_cost_original * discountable_ratio * bono_pct
+        power_discount = power_cost_original * bono_pct
+        bono_social_discount = energy_discount + power_discount
+    energy_cost = max(0.0, energy_cost_original - (bono_social_discount * (energy_cost_original / (energy_cost_original + power_cost_original)) if energy_cost_original + power_cost_original > 0 else 0.0))
+    power_cost = max(0.0, power_cost_original - (bono_social_discount * (power_cost_original / (energy_cost_original + power_cost_original)) if energy_cost_original + power_cost_original > 0 else 0.0))
+    taxable_base = energy_cost + power_cost
+    tax_rate = effective_electricity_tax_rate(contract, price)
+    vat_rate = effective_vat_rate(contract, price)
+    electricity_tax = max(taxable_base * tax_rate, energy_kwh * 0.001)
+    vat = (taxable_base + electricity_tax) * vat_rate
+    total = taxable_base + electricity_tax + vat + fees_total
+    return {
+        "days": days,
+        "energy_kwh": energy_kwh,
+        "energy_cost": energy_cost,
+        "energy_cost_original": energy_cost_original,
+        "power_cost": power_cost,
+        "power_cost_original": power_cost_original,
+        "service_fee": service_fee,
+        "service_fee_original": service_fee_original,
+        "service_discount": service_discount,
+        "social_bond": fee_values["social_bond"],
+        "meter_rent": fee_values["meter_rent"],
+        "other_fees": fee_values["other_fees"],
+        "fees_total": fees_total,
+        "bono_social_discount": bono_social_discount,
+        "bono_social_percentage": bono_pct,
+        "bono_social_applied": bono_social_applied,
+        "bono_social_eligible": bono_social_eligible,
+        "electricity_tax": electricity_tax,
+        "vat": vat,
+        "taxable_base": taxable_base,
+        "total": total,
+        "energy_prices": period_prices(price),
+        "electricity_tax_rate": tax_rate,
+        "vat_rate": vat_rate,
+        "by_period": by_period,
+        "cost_by_period": cost_by_period,
+        "price_source": curve.source,
+        "missing_hours": curve.missing_hours,
+        "coverage": curve.coverage,
+    }
+
+
 def price_to_dict(
     price: TariffPrice | None,
     year: int,
@@ -170,6 +287,7 @@ def price_to_dict(
         "vat_rate": price.vat_rate,
         "electricity_tax_rate": price.electricity_tax_rate,
         "periods": period_price_list(price),
+        "is_hourly": price.source == "ree_pvpc",
         "reference_month": f"{price.valid_from.year:04d}-{price.valid_from.month:02d}",
         "requested_month": f"{year:04d}-{month:02d}",
     }

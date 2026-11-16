@@ -29,3 +29,23 @@ def test_parse_pepe_rejects_bad_payload() -> None:
 
     with pytest.raises(PepeFetchError):
         parse_pepe_payload({"foo": "bar"})
+
+
+def test_parse_pepe_fixed_tariff() -> None:
+    payload = {
+        "fixed": {
+            "type": "electricity",
+            "kind": "fixed",
+            "variant": "E_SALE_FIXED_PRICE_SERVICE_FEE_TELCO_DISCOUNT_24H_POWER_2026_10_01",
+            "energyPrices": [0.1199],
+            "powerPrices": [0.075903, 0.001987],
+            "generalVatTaxRate": 0.21,
+            "electricityTaxRate": 0.0511269632,
+            "serviceFeePriceTaxIncluded": 3.996196,
+            "socialBond": {"serviceFeePriceTaxIncluded": 0.908639},
+            "lastUpdatedMonthName": "Octubre 2026",
+        }
+    }
+    offer = parse_pepe_payload(payload, kind="fixed")
+    assert offer.p1_price == offer.p2_price == offer.p3_price == 0.1199
+    assert offer.month_label == "Octubre 2026"

@@ -32,7 +32,10 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 - **Sin dependencia de sensores**: el motor funciona con potencia, horas, ciclos y perfiles típicos. Si existen entidades de HA, se pueden usar como mejora.
 - **Precios de Pepe**: se leen de la API pública que usa su web y se guardan como propuesta pendiente. La app nunca cambia precios sin confirmación.
 - **Precios por tramo**: la Tarifa Variable de Pepe publica precios mensuales de punta, llano y valle. No se usa el precio horario de ESIOS para calcular esa factura.
-- **ESIOS**: se integra como referencia de mercado y queda preparado para el comparador PVPC y las tarifas horarias.
+- **PVPC**: se obtiene de la API pública REData de REE y se factura hora a hora.
+- **Catálogo de tarifas**: perfiles integrados de Pepe, PVPC y perfiles comunitarios/manuales. Los de mercado libre se marcan como orientativos.
+- **Bono social**: descuento solo para PVPC, con categorías y límite anual; la financiación regulada es una línea aparte.
+- **ESIOS**: se integra como referencia de mercado y como alternativa si el usuario tiene un sensor propio.
 - **Open source**: licencia MIT, i18n preparada, catálogo y proveedores ampliables. Repositorio: [github.com/merchedev/EnergyHub](https://github.com/merchedev/EnergyHub).
 - **Novedades**: la app consulta `GET /addons/self/info` y `GET /store/addons/<slug>/changelog` del Supervisor. Filtra las entradas por la versión instalada y solo muestra las posteriores; si el Supervisor no está disponible, usa GitHub y, como último recurso, el `CHANGELOG.md` incluido en la imagen.
 
@@ -78,13 +81,12 @@ Los modos actuales son `always_on`, `hours_per_day`, `cycles` y `entity`. En `en
 
 - No hay telemetría.
 - El token del Supervisor nunca llega al navegador.
-- Las peticiones a Internet se limitan a la API de Pepe cuando el usuario lo pide.
+- Las peticiones a Internet se limitan a la API de Pepe, la API pública de REE y GitHub cuando el usuario las solicita.
 - Las automatizaciones se crean solo con confirmación, con ID propio y opción de deshacer.
 - Las estimaciones se muestran como orientativas.
 
 ## Próximas fases
 
-- Comparador Pepe vs PVPC/ESIOS con precios horarios históricos.
 - Integración puente o MQTT para exponer sensores nativos en HA.
 - Historial real de entidades on/off y estadísticas de largo plazo.
 - Notificaciones móviles y presupuestos.

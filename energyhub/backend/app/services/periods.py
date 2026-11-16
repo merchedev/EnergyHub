@@ -233,6 +233,36 @@ def window_period_fractions(
     return {p: counts[p] / total for p in PERIOD_ORDER}
 
 
+def window_hour_fractions(
+    day: date,
+    start: str,
+    end: str,
+    tz: ZoneInfo | None = None,
+    step_minutes: int = 15,
+) -> dict[datetime, float]:
+    """Split a local window into fractions keyed by the local hour start."""
+    tz = tz or ZoneInfo("Europe/Madrid")
+    start_min = _mins_from_hhmm(start)
+    end_min = _mins_from_hhmm(end)
+    if end_min <= start_min:
+        end_min += 24 * 60
+    total = end_min - start_min
+    if total <= 0:
+        return {}
+    counts: dict[datetime, float] = {}
+    cursor = start_min
+    while cursor < end_min:
+        minutes = min(step_minutes, end_min - cursor)
+        day_offset = cursor // (24 * 60)
+        minute_of_day = cursor % (24 * 60)
+        local_day = day + timedelta(days=day_offset)
+        hour = minute_of_day // 60
+        hour_dt = datetime.combine(local_day, time(hour=hour), tzinfo=tz)
+        counts[hour_dt] = counts.get(hour_dt, 0.0) + minutes
+        cursor += minutes
+    return {hour: minutes / total for hour, minutes in counts.items()}
+
+
 def next_cheap_windows(
     now: datetime,
     country: str = "ES",
