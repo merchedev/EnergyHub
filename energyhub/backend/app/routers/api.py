@@ -39,6 +39,7 @@ from ..schemas import (
 from ..services import (
     changelog,
     demo,
+    energy_readings,
     estimation,
     ha,
     pepe,
@@ -82,6 +83,18 @@ def _month(value: str | None, contract: Contract) -> tuple[int, int]:
     return periods.parse_month(value, tz)
 
 
+async def _refresh_energy_readings(
+    db: Session,
+    contract: Contract,
+    year: int,
+    month: int,
+) -> None:
+    devices = list(
+        db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id)).all()
+    )
+    await energy_readings.refresh_readings(db, ha_client, contract, devices, year, month)
+
+
 def _price_for(
     db: Session, contract: Contract, year: int, month: int
 ) -> tuple[TariffPrice | None, bool]:
@@ -120,8 +133,20 @@ def _estimate_rows(
     devices = list(
         db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id)).all()
     )
+    real_energy = energy_readings.readings_for_month(db, year, month)
     rows = [
-        (device, estimation.estimate_device_hourly(device, contract, curve, year, month, factor))
+        (
+            device,
+            estimation.estimate_device_hourly(
+                device,
+                contract,
+                curve,
+                year,
+                month,
+                factor,
+                real_energy_kwh=real_energy.get(device.id),
+            ),
+        )
         for device in devices
     ]
     by_period = {"P1": 0.0, "P2": 0.0, "P3": 0.0}
@@ -149,6 +174,7 @@ def _estimate_one(
     device: Device,
     year: int,
     month: int,
+    real_energy_kwh: float | None = None,
 ) -> tuple[TariffPrice | None, prices.PriceCurve, estimation.DeviceEstimate, bool]:
     price, is_fallback = _price_for(db, contract, year, month)
     curve = (
@@ -156,6 +182,8 @@ def _estimate_one(
         if price is not None
         else prices.zero_month_curve(contract, year, month)
     )
+    if real_energy_kwh is None and device.id:
+        real_energy_kwh = energy_readings.reading_for_device(db, device.id, year, month)
     est = estimation.estimate_device_hourly(
         device,
         contract,
@@ -163,6 +191,7 @@ def _estimate_one(
         year,
         month,
         tariff.calibration_factor(db, contract),
+        real_energy_kwh=real_energy_kwh,
     )
     return price, curve, est, is_fallback
 
@@ -224,6 +253,8 @@ def _device_summary(
         "typical_windows": estimation.device_windows(device),
         "flexibility": device.flexibility,
         "entity_id": device.entity_id,
+        "energy_entity_id": device.energy_entity_id,
+        "energy_source": est.energy_source,
         "enabled": device.enabled,
         "notes": device.notes,
         "is_demo": device.is_demo,
@@ -265,6 +296,7 @@ def _apply_payload(device: Device, payload: DeviceIn) -> None:
     )
     device.flexibility = payload.flexibility
     device.entity_id = payload.entity_id
+    device.energy_entity_id = payload.energy_entity_id
     device.enabled = payload.enabled
     device.notes = payload.notes
 
@@ -375,12 +407,13 @@ def save_contract(payload: ContractIn, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/tariff/current")
-def current_tariff(
+async def current_tariff(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     db: Session = Depends(get_db),
 ) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(month, contract)
+    await _refresh_energy_readings(db, contract, year, month_number)
     return _serialize_current_tariff(db, contract, year, month_number)
 
 
@@ -506,12 +539,13 @@ def _profile_contract(contract: Contract, profile_id: str) -> SimpleNamespace:
 
 
 @router.get("/comparator")
-def comparator(
+async def comparator(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     db: Session = Depends(get_db),
 ) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(month, contract)
+    await _refresh_energy_readings(db, contract, year, month_number)
     price, is_fallback = _price_for(db, contract, year, month_number)
     profile = profiles.get_profile(contract.tariff_profile_id)
     rows, _factor, _by_period, current_bill, current_curve = _estimate_rows(
@@ -751,7 +785,7 @@ def save_manual_price(payload: ManualPriceIn, db: Session = Depends(get_db)) -> 
 
 
 @router.get("/devices")
-def list_devices(
+async def list_devices(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -759,6 +793,7 @@ def list_devices(
     if contract is None:
         return {"items": [], "summary": {"energy_kwh": 0, "cost": 0, "count": 0}}
     year, month_number = _month(month, contract)
+    await _refresh_energy_readings(db, contract, year, month_number)
     price, _fallback = _price_for(db, contract, year, month_number)
     rows, factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     total_cost = sum(est.cost_eur for _device, est in rows)
@@ -779,11 +814,28 @@ def list_devices(
 
 
 @router.post("/devices/preview")
-def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> dict:
+async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(payload.month, contract)
     device = _device_from_payload(payload.device)
-    price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
+    real_energy = None
+    energy_error: str | None = None
+    if device.mode == "entity" and device.energy_entity_id:
+        if ha_client.configured:
+            result = await energy_readings.cached_month_energy(
+                ha_client,
+                contract,
+                str(device.energy_entity_id),
+                year,
+                month_number,
+            )
+            real_energy = result.energy_kwh
+            energy_error = result.error
+        else:
+            energy_error = "Home Assistant no está conectado; no se puede leer la entidad de energía."
+    price, _curve, est, _fallback = _estimate_one(
+        db, contract, device, year, month_number, real_energy_kwh=real_energy
+    )
     return {
         "energy_kwh": est.energy_kwh,
         "active_kwh": est.active_kwh,
@@ -801,6 +853,9 @@ def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)) -> d
         "price_month_label": periods.month_label_es(year, month_number),
         "price_source": price.source if price is not None else None,
         "currency": contract.currency,
+        "energy_source": est.energy_source,
+        "energy_entity_id": device.energy_entity_id,
+        "energy_error": energy_error,
     }
 
 
@@ -848,6 +903,7 @@ async def dashboard(
 ) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(month, contract)
+    await _refresh_energy_readings(db, contract, year, month_number)
     profile = profiles.get_profile(contract.tariff_profile_id)
     price, is_fallback = _price_for(db, contract, year, month_number)
     rows, factor, by_period, bill, curve = _estimate_rows(db, contract, price, year, month_number)
@@ -988,9 +1044,10 @@ async def dashboard(
 
 
 @router.get("/recommendations")
-def list_recommendations(db: Session = Depends(get_db)) -> dict:
+async def list_recommendations(db: Session = Depends(get_db)) -> dict:
     contract = _contract_or_404(db)
     year, month_number = _month(None, contract)
+    await _refresh_energy_readings(db, contract, year, month_number)
     price, is_fallback = _price_for(db, contract, year, month_number)
     rows, _factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     calibration = tariff.get_latest_calibration(db, contract)

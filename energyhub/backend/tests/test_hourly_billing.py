@@ -182,3 +182,36 @@ def test_pvpc_price_does_not_overwrite_pepe_month() -> None:
         assert len(stored) == 1
         assert stored[0].source == "pepe_api"
         assert stored[0].p1_price == 0.4
+
+
+def test_entity_mode_uses_real_ha_energy() -> None:
+    contract = make_contract()
+    curve = prices.zero_month_curve(contract, 2026, 11)
+    for point in curve.points:
+        point.price = 0.2
+    device = Device(
+        id=1,
+        name="Lavadora Samsung",
+        category="washing_machine",
+        mode="entity",
+        power_active_w=600,
+        power_standby_w=0,
+        duty_cycle_pct=100,
+        annual_kwh=None,
+        hours_per_day=1,
+        cycles_per_week=0,
+        minutes_per_cycle=0,
+        always_plugged=True,
+        flexibility="flexible",
+        entity_id="switch.lavadora",
+        energy_entity_id="sensor.lavadora_energy",
+        enabled=True,
+    )
+    est = estimation.estimate_device_hourly(
+        device, contract, curve, 2026, 11, real_energy_kwh=20.0
+    )
+    assert abs(est.energy_kwh - 20.0) < 0.01
+    assert est.energy_source == "ha_energy_sensor"
+    assert est.confidence == "alta"
+    assert abs(est.active_kwh - 20.0) < 0.01
+    assert abs(est.standby_kwh) < 0.01

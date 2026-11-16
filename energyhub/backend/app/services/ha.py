@@ -10,7 +10,7 @@ from ..config import HA_TOKEN, HA_URL, SUPERVISOR_TOKEN
 
 ON_STATES = {"on", "open", "playing", "heat", "cool", "auto", "home", "charging"}
 CONTROL_DOMAINS = {"switch", "light", "input_boolean", "fan", "climate", "media_player", "script"}
-SENSOR_UNITS = {"W", "kW", "kWh", "Wh", "€/kWh", "€", "EUR"}
+SENSOR_UNITS = {"W", "kW", "kWh", "Wh", "MWh", "€/kWh", "€", "EUR"}
 
 
 class HaError(Exception):
@@ -148,6 +148,50 @@ class HaClient:
             intervals.append((on_since, max(end, last_time or end)))
         return intervals
 
+    async def get_numeric_history(
+        self,
+        entity_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[tuple[datetime, float]]:
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        data = await self._get(
+            f"/history/period/{start.isoformat()}",
+            params={
+                "filter_entity_id": entity_id,
+                "end_time": end.isoformat(),
+                "minimal_response": "",
+                "no_attributes": "",
+            },
+        )
+        if not isinstance(data, list) or not data:
+            return []
+        states = data[0] if isinstance(data[0], list) else data
+        result: list[tuple[datetime, float]] = []
+        for item in states:
+            if not isinstance(item, dict):
+                continue
+            raw_state = str(item.get("state", "")).strip().lower()
+            if raw_state in {"", "unknown", "unavailable", "none", "nan"}:
+                continue
+            try:
+                value = float(raw_state)
+            except ValueError:
+                continue
+            timestamp = item.get("last_updated") or item.get("last_changed")
+            if not timestamp:
+                continue
+            try:
+                moment = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            result.append((moment, value))
+        result.sort(key=lambda item: item[0])
+        return result
+
     async def list_entities(self, kind: str | None = None) -> list[dict]:
         states = await self.get_states()
         result: list[dict] = []
@@ -166,7 +210,7 @@ class HaClient:
                 if kind == "price":
                     include = unit in {"€/kWh", "EUR/kWh"} or device_class == "monetary"
                 elif kind == "energy":
-                    include = device_class == "energy" or unit in {"kWh", "Wh"}
+                    include = device_class == "energy" or unit in {"kWh", "Wh", "MWh"}
                 elif kind == "power":
                     include = device_class == "power" or unit in {"W", "kW"}
                 else:
@@ -181,6 +225,7 @@ class HaClient:
                     "state": str(state.get("state") or ""),
                     "unit": unit,
                     "device_class": device_class,
+                    "state_class": attributes.get("state_class"),
                 }
             )
         result.sort(key=lambda item: (item["domain"], item["name"].lower()))

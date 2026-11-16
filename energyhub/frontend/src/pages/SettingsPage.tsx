@@ -20,6 +20,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { api } from '../api'
+import { EntityPicker } from '../components/EntityPicker'
 import {
   Badge,
   Banner,
@@ -28,7 +29,6 @@ import {
   ErrorBox,
   Field,
   Loading,
-  Select,
   useToast,
 } from '../components/ui'
 import { useApi } from '../hooks/useApi'
@@ -253,14 +253,14 @@ export function SettingsPage({ onChanged }: { onChanged: () => Promise<void> }) 
               label="Entidad de Home Assistant"
               hint="Selecciona el sensor de Conecta ESIOS o cualquier sensor de precio en €/kWh."
             >
-              <Select value={esiosEntity} onChange={(event) => setEsiosEntity(event.target.value)}>
-                <option value="">Sin sensor</option>
-                {(priceEntities?.items ?? []).map((entity) => (
-                  <option value={entity.entity_id} key={entity.entity_id}>
-                    {entity.name} · {entity.entity_id}
-                  </option>
-                ))}
-              </Select>
+              <EntityPicker
+                entities={priceEntities?.items ?? []}
+                value={esiosEntity}
+                onChange={setEsiosEntity}
+                emptyLabel="Sin sensor"
+                placeholder="Buscar sensor de precio…"
+                hint="Sensores en €/kWh"
+              />
             </Field>
             {!priceEntities?.configured ? (
               <div className="small muted mt-8">Conecta Home Assistant para listar entidades.</div>

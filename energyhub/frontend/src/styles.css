@@ -1353,6 +1353,59 @@ button {
   transform: rotate(180deg);
 }
 
+.entity-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.entity-search {
+  position: relative;
+}
+
+.entity-search .input {
+  padding-left: 32px;
+  padding-right: 34px;
+}
+
+.entity-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-2);
+  pointer-events: none;
+}
+
+.entity-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.entity-search-clear:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.entity-picker-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted-2);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .annual-summary {
   display: grid;
   gap: 12px;

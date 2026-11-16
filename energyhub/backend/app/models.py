@@ -123,11 +123,27 @@ class Device(Base):
     typical_windows_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     flexibility: Mapped[str] = mapped_column(String(20), default="none")
     entity_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    energy_entity_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class DeviceEnergyReading(Base):
+    __tablename__ = "device_energy_readings"
+    __table_args__ = (UniqueConstraint("device_id", "period_start", name="uq_device_energy_month"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    period_start: Mapped[date] = mapped_column(Date, index=True)
+    energy_kwh: Mapped[float] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(40), default="ha_energy_sensor")
+    start_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    end_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Calibration(Base):

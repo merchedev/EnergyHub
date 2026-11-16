@@ -19,6 +19,7 @@ La app guarda los datos en `/data` y funciona dentro de Home Assistant con Ingre
 - Los precios de Pepe se obtienen de la API pública que usa su web. La app siempre pide confirmación antes de aplicarlos.
 - Pepe publica el precio del mes pasado; la app lo marca como provisional hasta que se confirme el mes actual.
 - PVPC se obtiene de la API pública de REE y se calcula hora a hora.
+- Si un dispositivo tiene una entidad de energía acumulada en Home Assistant, se usa su consumo mensual real. Si no hay lectura, se mantiene la estimación manual como respaldo.
 - El bono social solo se aplica a PVPC. Con tarifas de mercado libre se muestra la financiación regulada y un aviso.
 - El catálogo comunitario de otras comercializadoras es orientativo; confirma precios y cuotas con tu factura.
 - Las estimaciones son orientativas y no sustituyen a la factura oficial.

@@ -19,6 +19,8 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 - Descuento del bono social para PVPC, con categorías y límite anual de energía.
 - Precios mensuales por tramo o precios horarios, calendario y festivos.
 - Dispositivos sin sensores: siempre enchufado, horas al día, ciclos o entidad de HA.
+- Buscador de entidades de Home Assistant para dispositivos y sensores ESIOS.
+- Consumo real de dispositivos desde entidades de energía acumulada (kWh/Wh), con respaldo manual.
 - Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
 - Factura estimada, proyección y calibración con la factura real.
 - Comparador Pepe vs PVPC con el mismo consumo y potencia.
@@ -98,6 +100,10 @@ La propuesta de precios de Pepe indica de dónde salen los datos y enlaza a la t
 
 ![Propuesta de precios de Pepe](docs/screenshots/price-proposal.png)
 
+La ficha permite buscar entidades de Home Assistant y usar un contador de energía acumulada. Si Home Assistant devuelve una lectura válida, el consumo mensual del aparato pasa a ser real.
+
+![Entidades de Home Assistant](docs/screenshots/entity-picker.png)
+
 | Resumen | Dispositivos |
 |---|---|
 | ![Resumen](docs/screenshots/dashboard.png) | ![Dispositivos](docs/screenshots/devices.png) |
@@ -124,7 +130,7 @@ La propuesta de precios de Pepe indica de dónde salen los datos y enlaza a la t
 
 ## Estado del proyecto
 
-Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura, PVPC, bono social, comparador y recomendaciones está probado con la API real de Pepe, la API pública de REE y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. Los sensores nativos, el historial real de entidades y el soporte multi-país llegarán en siguientes fases.
+Alpha inicial. El flujo completo de demo, onboarding, tarifa, estimación, factura, PVPC, bono social, comparador, recomendaciones y lectura de energía desde Home Assistant está probado con la API real de Pepe, la API pública de REE y una base de datos local. La conexión con Home Assistant y la creación de automatizaciones están implementadas y preparadas, pero requieren validarse contra tu instalación concreta. La lectura de energía ya está integrada; el historial de estados on/off para repartir por horas y los sensores nativos llegarán en siguientes fases. El soporte multi-país también queda para más adelante.
 
 El Dockerfile y la estructura de app están incluidos. La imagen se compila correctamente en CI (GitHub Actions); la instalación real en HA OS queda por validar en tu instalación.
 

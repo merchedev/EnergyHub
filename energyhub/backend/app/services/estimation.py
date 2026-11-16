@@ -25,6 +25,7 @@ class DeviceEstimate:
     confidence: str = "media"
     notes: list[str] = field(default_factory=list)
     hourly: dict[datetime, float] = field(default_factory=dict)
+    energy_source: str = "estimated"
 
     def period_rows(self, price: TariffPrice | None) -> list[dict]:
         prices = period_prices(price) if price is not None else {p: 0.0 for p in periods.PERIOD_ORDER}
@@ -101,10 +102,6 @@ def _active_energy(device: Device, days: int) -> tuple[float, float, list[str]]:
     if device.mode == "entity":
         active_hours = float(device.hours_per_day or 0.0)
         active = float(device.power_active_w or 0.0) * active_hours * days / 1000.0
-        notes.append(
-            "Modo entidad: el historial real de HA se usará cuando esté conectado; "
-            "de momento se estima con las horas al día."
-        )
         return active, 0.0, notes
     active = float(device.power_active_w or 0.0) * float(device.hours_per_day or 0.0) * days / 1000.0
     return active, 0.0, notes
@@ -261,6 +258,7 @@ def estimate_device_hourly(
     year: int,
     month: int,
     calibration: float = 1.0,
+    real_energy_kwh: float | None = None,
 ) -> DeviceEstimate:
     """Estimate a device by allocating its energy to each local hour."""
     try:
@@ -276,8 +274,18 @@ def estimate_device_hourly(
     active_total, _unused, active_notes = _active_energy(device, days)
     active_hours = _active_hours_per_day(device)
     standby_total = _standby_energy(device, days, active_hours)
+    energy_source = "estimated"
+    if device.mode == "entity" and real_energy_kwh is not None:
+        active_total = max(0.0, float(real_energy_kwh))
+        standby_total = 0.0
+        active_notes = ["Consumo real de la entidad de energía de Home Assistant."]
+        energy_source = "ha_energy_sensor"
+    elif device.mode == "entity" and getattr(device, "energy_entity_id", None):
+        active_notes.append(
+            "Sin lectura de la entidad de energía para este mes; se usa la estimación por horas."
+        )
     notes.extend(active_notes)
-    factor = max(0.0, float(calibration or 1.0))
+    factor = 1.0 if energy_source == "ha_energy_sensor" else max(0.0, float(calibration or 1.0))
     if device.mode == "always_on":
         total = (active_total + standby_total) * factor
         per_hour = total / len(points)
@@ -305,8 +313,13 @@ def estimate_device_hourly(
             per_hour = standby_total * factor / len(points)
             for point in points:
                 hourly[point.local_dt] += per_hour
+        prefix = (
+            "Consumo real repartido según la franja típica de "
+            if energy_source == "ha_energy_sensor"
+            else "Estimación con franja típica de "
+        )
         notes.append(
-            "Estimación con franja típica de "
+            prefix
             + ", ".join(f"{window['start']}–{window['end']}" for window in windows)
             + "."
         )
@@ -330,7 +343,7 @@ def estimate_device_hourly(
         available_prices = [point.price for point in points if point.price > 0]
         min_cost = total_energy * min(available_prices) if available_prices else 0.0
         max_cost = total_energy * max(available_prices) if available_prices else 0.0
-    confidence = _confidence(device)
+    confidence = "alta" if energy_source == "ha_energy_sensor" else _confidence(device)
     if curve.source == "ree_pvpc":
         notes.append("Coste calculado con precios PVPC horarios.")
     if factor != 1.0:
@@ -347,4 +360,5 @@ def estimate_device_hourly(
         confidence=confidence,
         notes=notes,
         hourly=hourly,
+        energy_source=energy_source,
     )

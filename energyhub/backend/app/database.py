@@ -62,8 +62,21 @@ def _migrate_contracts() -> None:
             )
 
 
+def _migrate_devices() -> None:
+    inspector = inspect(engine)
+    if "devices" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("devices")}
+    if "energy_entity_id" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE devices ADD COLUMN energy_entity_id VARCHAR(160)")
+            )
+
+
 def init_db() -> None:
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _migrate_contracts()
+    _migrate_devices()

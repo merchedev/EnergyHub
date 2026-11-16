@@ -231,6 +231,8 @@ export interface Device {
   typical_windows: Window[]
   flexibility: Flexibility
   entity_id: string | null
+  energy_entity_id: string | null
+  energy_source: 'ha_energy_sensor' | 'estimated'
   enabled: boolean
   notes: string | null
   is_demo: boolean
@@ -266,6 +268,7 @@ export interface DeviceInput {
   typical_windows?: Window[] | null
   flexibility: Flexibility
   entity_id?: string | null
+  energy_entity_id?: string | null
   enabled: boolean
   notes?: string | null
 }
@@ -287,6 +290,9 @@ export interface DevicePreview {
   price_month_label: string | null
   price_source: string | null
   currency: string
+  energy_source: 'ha_energy_sensor' | 'estimated'
+  energy_entity_id: string | null
+  energy_error: string | null
 }
 
 export interface DeviceSummary {
@@ -427,6 +433,7 @@ export interface HaEntity {
   state: string
   unit: string | null
   device_class: string | null
+  state_class: string | null
 }
 
 export interface HaStatus {

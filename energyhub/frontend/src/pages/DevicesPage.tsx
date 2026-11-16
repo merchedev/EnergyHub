@@ -209,7 +209,13 @@ export function DevicesPage() {
                               {confidenceLabel(device.confidence)}
                             </Badge>
                             {device.is_demo ? <Badge tone="blue">Demo</Badge> : null}
-                            {device.entity_id ? <Badge tone="neutral">HA</Badge> : null}
+                            {device.energy_source === 'ha_energy_sensor' ? (
+                              <Badge tone="green">Consumo real HA</Badge>
+                            ) : device.energy_entity_id ? (
+                              <Badge tone="yellow">HA sin lectura</Badge>
+                            ) : device.entity_id ? (
+                              <Badge tone="neutral">Entidad HA</Badge>
+                            ) : null}
                           </div>
                         </div>
                       </div>

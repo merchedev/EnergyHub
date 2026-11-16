@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { api } from '../api'
+import { EntityPicker } from '../components/EntityPicker'
 import {
   Badge,
   Banner,
@@ -1188,14 +1189,14 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
             {priceEntities?.configured ? (
               <>
                 <Field label="Sensor de precio de Home Assistant" hint="Entidades con unidad €/kWh.">
-                  <Select value={esiosEntity} onChange={(event) => setEsiosEntity(event.target.value)}>
-                    <option value="">Sin sensor</option>
-                    {esiosPriceEntities.map((entity) => (
-                      <option value={entity.entity_id} key={entity.entity_id}>
-                        {entity.name} · {entity.entity_id} ({entity.state} {entity.unit})
-                      </option>
-                    ))}
-                  </Select>
+                  <EntityPicker
+                    entities={esiosPriceEntities}
+                    value={esiosEntity}
+                    onChange={setEsiosEntity}
+                    emptyLabel="Sin sensor"
+                    placeholder="Buscar sensor de precio…"
+                    hint="Sensores en €/kWh"
+                  />
                 </Field>
                 {esiosPriceEntities.length === 0 ? (
                   <div className="small muted mt-8">

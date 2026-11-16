@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+2026-11-16
+
+- Buscador de entidades de Home Assistant en la ficha de dispositivo, Ajustes y Tarifa.
+- El selector muestra nombre, entity_id, unidad, estado y número de resultados.
+- Nueva entidad de energía acumulada por dispositivo para usar el consumo real mensual de Home Assistant.
+- Lectura del contador al inicio y al final del mes, con conversión de Wh/MWh a kWh.
+- Reparto del consumo real por la franja típica del aparato y respaldo manual si falla la lectura.
+- Caché de lecturas: 15 minutos para el mes actual y conservación de meses cerrados.
+- Migración automática de dispositivos existentes y nueva tabla de lecturas mensuales.
+- Tests de lectura de energía, unidades, resets, sensores instantáneos y almacenamiento mensual.
+
 ## 0.2.2
 2026-11-16
 

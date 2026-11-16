@@ -12,6 +12,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { api } from '../api'
+import { EntityPicker } from '../components/EntityPicker'
 import { DeviceIcon } from '../components/Icon'
 import {
   Badge,
@@ -54,6 +55,7 @@ function fromDevice(device: Device): DeviceInput {
     typical_windows: device.typical_windows,
     flexibility: device.flexibility,
     entity_id: device.entity_id,
+    energy_entity_id: device.energy_entity_id,
     enabled: device.enabled,
     notes: device.notes,
   }
@@ -78,6 +80,7 @@ function fromCatalog(item: CatalogItem, current?: DeviceInput): DeviceInput {
     typical_windows: null,
     flexibility: item.flexibility,
     entity_id: null,
+    energy_entity_id: null,
     enabled: true,
     notes: null,
   }
@@ -101,6 +104,7 @@ const EMPTY: DeviceInput = {
   typical_windows: null,
   flexibility: 'none',
   entity_id: null,
+  energy_entity_id: null,
   enabled: true,
   notes: null,
 }
@@ -129,6 +133,7 @@ export function DeviceForm({
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [entities, setEntities] = useState<HaEntity[]>([])
+  const [energyEntities, setEnergyEntities] = useState<HaEntity[]>([])
   const [entitiesConfigured, setEntitiesConfigured] = useState(false)
 
   const selectedCatalog = useMemo(
@@ -138,6 +143,9 @@ export function DeviceForm({
   const annualKwh = Number(form.annual_kwh ?? 0)
   const annualOnly = form.mode === 'always_on' && annualKwh > 0
   const averageAnnualW = annualKwh > 0 ? (annualKwh * 1000) / 8760 : 0
+  const selectedEnergyEntity = energyEntities.find(
+    (entity) => entity.entity_id === form.energy_entity_id,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -155,16 +163,21 @@ export function DeviceForm({
   useEffect(() => {
     if (!open || form.mode !== 'entity') return
     let cancelled = false
-    api
-      .haEntities('control')
-      .then((result) => {
-        if (cancelled) return
-        setEntities(result.items)
-        setEntitiesConfigured(result.configured)
-      })
-      .catch(() => {
-        if (!cancelled) setEntitiesConfigured(false)
-      })
+    Promise.allSettled([api.haEntities('control'), api.haEntities('energy')]).then((results) => {
+      if (cancelled) return
+      const [controlResult, energyResult] = results
+      const control =
+        controlResult.status === 'fulfilled'
+          ? controlResult.value
+          : { configured: false, items: [] }
+      const energy =
+        energyResult.status === 'fulfilled'
+          ? energyResult.value
+          : { configured: false, items: [] }
+      setEntities(control.items)
+      setEnergyEntities(energy.items)
+      setEntitiesConfigured(Boolean(control.configured || energy.configured))
+    })
     return () => {
       cancelled = true
     }
@@ -545,18 +558,59 @@ export function DeviceForm({
                   tanto, usa una estimación por horas.
                 </div>
               ) : null}
-              <Field label="Entidad de encendido/apagado">
-                <Select
+              <div className="banner accent">
+                <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  La <strong>entidad de energía</strong> debe ser un contador acumulado en kWh o Wh.
+                  Si la eliges, el consumo del mes sale de Home Assistant. La entidad de estado es
+                  opcional y queda guardada como referencia; el reparto por horas usa la franja típica.
+                </span>
+              </div>
+              <Field
+                label="Entidad de energía (kWh)"
+                hint="Opcional. Si la eliges, usamos el consumo real del mes."
+              >
+                <EntityPicker
+                  entities={energyEntities}
+                  value={form.energy_entity_id ?? ''}
+                  onChange={(value) => update('energy_entity_id', value || null)}
+                  emptyLabel="Sin entidad de energía"
+                  placeholder="Buscar sensor de energía…"
+                  hint={
+                    selectedEnergyEntity
+                      ? `${selectedEnergyEntity.state} ${selectedEnergyEntity.unit ?? ''} · ${
+                          selectedEnergyEntity.state_class ?? 'sin state_class'
+                        }`
+                      : undefined
+                  }
+                />
+                {entitiesConfigured && energyEntities.length === 0 ? (
+                  <div className="field-hint">
+                    No hay sensores de energía compatibles expuestos en Home Assistant.
+                  </div>
+                ) : null}
+              </Field>
+              {selectedEnergyEntity?.state_class === 'measurement' ? (
+                <div className="banner warning">
+                  <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    Esa entidad parece una medición instantánea, no un contador acumulado. No se usará
+                    para el consumo mensual; elige una entidad con estado <code>total_increasing</code>.
+                  </span>
+                </div>
+              ) : null}
+              <Field
+                label="Entidad de estado (opcional)"
+                hint="Se guarda como referencia. El reparto actual usa la franja típica."
+              >
+                <EntityPicker
+                  entities={entities}
                   value={form.entity_id ?? ''}
-                  onChange={(event) => update('entity_id', event.target.value || null)}
-                >
-                  <option value="">Selecciona una entidad</option>
-                  {entities.map((entity) => (
-                    <option value={entity.entity_id} key={entity.entity_id}>
-                      {entity.name} · {entity.entity_id}
-                    </option>
-                  ))}
-                </Select>
+                  onChange={(value) => update('entity_id', value || null)}
+                  emptyLabel="Sin entidad de estado"
+                  placeholder="Buscar por nombre o entity_id…"
+                  hint="Entidades de control de Home Assistant"
+                />
               </Field>
               <div className="form-grid">
                 <Field label="Potencia activa (W)">
@@ -627,7 +681,13 @@ export function DeviceForm({
               <div className="eyebrow" style={{ marginBottom: 2 }}>
                 <Wand2 size={11} /> Vista previa
               </div>
-              <div className="small muted">Estimación de {modeLabel(form.mode).toLowerCase()}</div>
+              <div className="small muted">
+                {form.mode === 'entity'
+                  ? form.energy_entity_id
+                    ? 'Consumo desde Home Assistant'
+                    : 'Estimación de respaldo con horas al día'
+                  : `Estimación de ${modeLabel(form.mode).toLowerCase()}`}
+              </div>
             </div>
             <div className="device-icon">
               <DeviceIcon name={form.icon ?? selectedCatalog?.icon} size={21} />
@@ -644,6 +704,18 @@ export function DeviceForm({
                 <span className="small muted">Coste energía</span>
                 <strong>{previewHasPrice ? eur(preview.cost_eur) : '—'}</strong>
               </div>
+              {preview.energy_source === 'ha_energy_sensor' ? (
+                <Badge tone="green">Consumo real desde Home Assistant</Badge>
+              ) : form.mode === 'entity' && preview.energy_entity_id ? (
+                <div className="banner warning">
+                  <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    No se ha podido usar la entidad de energía
+                    {preview.energy_error ? `: ${preview.energy_error}` : '.'} Se usará la estimación
+                    manual como respaldo.
+                  </span>
+                </div>
+              ) : null}
               {!previewHasPrice ? (
                 <>
                   <div className="banner warning">

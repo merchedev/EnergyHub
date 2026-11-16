@@ -124,6 +124,7 @@ class DeviceIn(BaseModel):
     typical_windows: list[WindowIn] | None = None
     flexibility: str = Field(default="none", pattern=r"^(flexible|semi|none)$")
     entity_id: str | None = Field(default=None, max_length=160)
+    energy_entity_id: str | None = Field(default=None, max_length=160)
     enabled: bool = True
     notes: str | None = None
 
@@ -174,6 +175,9 @@ class DevicePreviewOut(BaseModel):
     price_month_label: str | None = None
     price_source: str | None = None
     currency: str = "EUR"
+    energy_source: str = "estimated"
+    energy_entity_id: str | None = None
+    energy_error: str | None = None
 
 
 class CalibrationIn(BaseModel):
@@ -245,6 +249,7 @@ class HaEntityOut(BaseModel):
     state: str
     unit: str | None = None
     device_class: str | None = None
+    state_class: str | None = None
 
 
 class HaStatusOut(BaseModel):
