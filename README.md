@@ -93,13 +93,25 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 |---|---|
 | ![Resumen](docs/screenshots/dashboard.png) | ![Dispositivos](docs/screenshots/devices.png) |
 
-| Factura | Horarios |
+| Onboarding | Tarifa y perfiles |
 |---|---|
-| ![Factura](docs/screenshots/bill.png) | ![Horarios](docs/screenshots/schedule.png) |
+| ![Onboarding](docs/screenshots/onboarding.png) | ![Tarifa](docs/screenshots/tariff.png) |
 
-| Recomendaciones | Novedades |
+| Comparador Pepe vs PVPC | Factura |
 |---|---|
-| ![Recomendaciones](docs/screenshots/recommendations.png) | ![Novedades](docs/screenshots/changelog.png) |
+| ![Comparador](docs/screenshots/comparator.png) | ![Factura](docs/screenshots/bill.png) |
+
+| Horarios por tramos | Resumen PVPC |
+|---|---|
+| ![Horarios](docs/screenshots/schedule.png) | ![Resumen PVPC](docs/screenshots/pvpc-dashboard.png) |
+
+| PVPC horario | Recomendaciones |
+|---|---|
+| ![PVPC horario](docs/screenshots/pvpc-schedule.png) | ![Recomendaciones](docs/screenshots/recommendations.png) |
+
+| Ajustes | Novedades |
+|---|---|
+| ![Ajustes](docs/screenshots/settings.png) | ![Novedades](docs/screenshots/changelog.png) |
 
 ## Estado del proyecto
 

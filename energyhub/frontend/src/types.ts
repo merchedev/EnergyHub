@@ -134,6 +134,7 @@ export interface ComparatorResponse {
   alternative_energy_cost: number
   pvpc_available: boolean
   missing_hours: number
+  pvpc_coverage: number
   current_bono_social: number
   alternative_bono_social: number
   notes: string[]

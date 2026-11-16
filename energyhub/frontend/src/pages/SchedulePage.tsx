@@ -58,7 +58,7 @@ export function SchedulePage() {
             hour: '2-digit',
             minute: '2-digit',
           }).format(date),
-          price: Number(point.price.toFixed(4)),
+          price: point.missing ? null : Number(point.price.toFixed(4)),
           missing: point.missing,
         }
       }),
@@ -113,7 +113,7 @@ export function SchedulePage() {
               <strong>PVPC horario.</strong> Precios de REE para las próximas 48 h. El importe de cada hora
               se aplica a tu consumo estimado en esa hora.
               {data.hourly && data.hourly.missing_hours > 0
-                ? ` Faltan ${data.hourly.missing_hours} horas por publicar; se usa el precio medio disponible.`
+                ? ` REE aún no ha publicado ${data.hourly.missing_hours} horas; la curva muestra solo las disponibles.`
                 : ''}
             </span>
           </Banner>

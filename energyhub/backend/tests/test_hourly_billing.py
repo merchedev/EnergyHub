@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.database import Base
 from app.models import Contract, Device, TariffPrice
-from app.services import estimation, prices, tariff
+from app.services import estimation, prices, pvpc, tariff
 from app.services.pvpc import parse_ree_payload
 
 
@@ -131,3 +135,50 @@ def test_bill_applies_bono_social_only_to_pvpc() -> None:
     pepe_bill = tariff.bill_breakdown_hourly(pepe_contract, pepe_price, 30, energy, pepe_curve)
     assert pepe_bill["bono_social_applied"] is False
     assert pepe_bill["bono_social_discount"] == 0
+
+
+def test_pvpc_price_does_not_overwrite_pepe_month() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        contract = make_contract(profile_id="pvpc_2td")
+        db.add(contract)
+        pepe_price = TariffPrice(
+            contract_id=1,
+            valid_from=date(2026, 10, 1),
+            valid_to=date(2026, 10, 31),
+            month_label="Octubre 2026",
+            source="pepe_api",
+            status="confirmed",
+            p1_price=0.4,
+            p2_price=0.3,
+            p3_price=0.2,
+            power_p1_price=0.075903,
+            power_p2_price=0.001987,
+            service_fee_eur_month=3.996196,
+            social_bond_eur_month=0.908639,
+            vat_rate=0.21,
+            electricity_tax_rate=0.0511269632,
+        )
+        db.add(pepe_price)
+        db.commit()
+
+        def fake_prices(*_args, **_kwargs):
+            return {
+                datetime(2026, 10, 1, 0, tzinfo=timezone.utc): 0.1,
+                datetime(2026, 10, 1, 1, tzinfo=timezone.utc): 0.2,
+            }, True
+
+        original = pvpc.pvpc_month_prices
+        pvpc.pvpc_month_prices = fake_prices
+        try:
+            pvpc_price = prices.ensure_tariff_price(db, contract, 2026, 10)
+        finally:
+            pvpc.pvpc_month_prices = original
+
+        assert pvpc_price is not None
+        assert pvpc_price.source == "ree_pvpc"
+        stored = db.query(TariffPrice).filter_by(contract_id=1).all()
+        assert len(stored) == 1
+        assert stored[0].source == "pepe_api"
+        assert stored[0].p1_price == 0.4

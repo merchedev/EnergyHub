@@ -143,7 +143,7 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
         </Banner>
       ) : null}
 
-      {data.price_mode === 'hourly' && (data.totals.missing_hours ?? 0) > 0 ? (
+      {data.price_mode === 'hourly' && (data.totals.price_coverage ?? 1) < 0.95 ? (
         <Banner tone="warning">
           <Zap size={15} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>
@@ -525,7 +525,11 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
             <div className="card-header">
               <div>
                 <h2 className="card-title">Mercado eléctrico</h2>
-                <p className="card-subtitle">Referencia ESIOS; no se aplica a tu tarifa de Pepe.</p>
+                <p className="card-subtitle">
+                  {data.price_mode === 'hourly'
+                    ? 'Referencia ESIOS; tu factura PVPC usa la curva horaria de REE.'
+                    : 'Referencia ESIOS; no se aplica a tu tarifa de Pepe.'}
+                </p>
               </div>
               <Badge tone={data.esios.connected ? 'green' : 'neutral'}>
                 {data.esios.connected ? 'Conectado' : 'Opcional'}

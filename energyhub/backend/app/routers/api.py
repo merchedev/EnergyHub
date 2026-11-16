@@ -405,7 +405,17 @@ def tariff_calendar(
         curve = prices.build_range_curve(
             db, contract, price, start_hour, start_hour + timedelta(days=days)
         )
-        hourly_data = curve.as_dict()
+        chart_points = curve.points[:48]
+        hourly_data = {
+            "points": [point.as_dict() for point in chart_points],
+            "missing_hours": sum(1 for point in chart_points if point.missing),
+            "source": curve.source,
+            "coverage": (
+                sum(1 for point in chart_points if not point.missing) / len(chart_points)
+                if chart_points
+                else 0.0
+            ),
+        }
         cheap = _curve_cheap_windows(curve, tz, count=6, duration_hours=2)
     else:
         cheap = periods.next_cheap_windows(
@@ -515,6 +525,7 @@ def comparator(
             energy_by_hour[hour_dt] = energy_by_hour.get(hour_dt, 0.0) + energy
     days = periods.month_days(year, month_number)
     notes: list[str] = ["Misma potencia contratada y mismo consumo estimado para ambos escenarios."]
+    pvpc_coverage = 1.0
     if profile.get("price_source") == "ree_pvpc":
         alternative_profile_id = "pepe_variable"
         alternative_price, _ = tariff.get_price_for_month(
@@ -531,6 +542,7 @@ def comparator(
         )
         pvpc_available = current_curve.coverage > 0
         missing_hours = current_curve.missing_hours
+        pvpc_coverage = current_curve.coverage
         if is_fallback:
             notes.append("El precio de Pepe es provisional.")
     else:
@@ -567,14 +579,15 @@ def comparator(
             ) from exc
         pvpc_available = alt_curve.coverage > 0
         missing_hours = alt_curve.missing_hours
+        pvpc_coverage = alt_curve.coverage
         if is_fallback:
             notes.append("El precio de Pepe es provisional; la comparación puede variar.")
         if contract.bono_social_category != "none":
             notes.append("El bono social solo se aplica a PVPC; la alternativa PVPC lo incluye.")
-        if missing_hours:
-            notes.append(
-                f"Faltan {missing_hours} horas de PVPC; se usa el precio medio disponible."
-            )
+    if missing_hours and pvpc_coverage < 0.95:
+        notes.append(
+            f"Faltan {missing_hours} horas de PVPC; se usa el precio medio disponible."
+        )
     alternative_bill = tariff.bill_breakdown_hourly(
         alternative_contract,
         alternative_price,
@@ -597,6 +610,7 @@ def comparator(
         "alternative_energy_cost": alternative_bill["energy_cost"],
         "pvpc_available": pvpc_available,
         "missing_hours": missing_hours,
+        "pvpc_coverage": pvpc_coverage,
         "current_bono_social": current_bill.get("bono_social_discount", 0.0),
         "alternative_bono_social": alternative_bill.get("bono_social_discount", 0.0),
         "notes": notes,

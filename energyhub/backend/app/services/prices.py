@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Contract, TariffPrice
@@ -95,33 +94,25 @@ def ensure_tariff_price(db: Session, contract: Contract, year: int, month: int) 
         existing, _ = tariff.get_price_for_month(db, contract, year, month, source="manual")
         return existing
     first, last = periods.month_bounds(year, month)
-    row = db.scalars(
-        select(TariffPrice).where(
-            TariffPrice.contract_id == contract.id,
-            TariffPrice.valid_from == first,
-        )
-    ).first()
-    if row is None:
-        row = TariffPrice(
-            contract_id=contract.id,
-            valid_from=first,
-            valid_to=last,
-            month_label=periods.month_label_short(year, month),
-            source="ree_pvpc",
-            status="confirmed",
-            p1_price=0.0,
-            p2_price=0.0,
-            p3_price=0.0,
-            power_p1_price=float(profile.get("power_p1_price") or 0.0),
-            power_p2_price=float(profile.get("power_p2_price") or 0.0),
-            service_fee_eur_month=float(profile.get("service_fee_eur_month") or 0.0),
-            social_bond_eur_month=float(profile.get("social_bond_eur_month") or 0.0),
-            vat_rate=float(profile.get("vat_rate") or 0.21),
-            electricity_tax_rate=float(profile.get("electricity_tax_rate") or 0.0511269632),
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
+    # No se guarda una fila mensual de PVPC: la fuente real es la tabla horaria y
+    # así no se sobrescribe el precio de Pepe del mismo mes en el comparador.
+    row = TariffPrice(
+        contract_id=contract.id,
+        valid_from=first,
+        valid_to=last,
+        month_label=periods.month_label_short(year, month),
+        source="ree_pvpc",
+        status="confirmed",
+        p1_price=0.0,
+        p2_price=0.0,
+        p3_price=0.0,
+        power_p1_price=float(profile.get("power_p1_price") or 0.0),
+        power_p2_price=float(profile.get("power_p2_price") or 0.0),
+        service_fee_eur_month=float(profile.get("service_fee_eur_month") or 0.0),
+        social_bond_eur_month=float(profile.get("social_bond_eur_month") or 0.0),
+        vat_rate=float(profile.get("vat_rate") or 0.21),
+        electricity_tax_rate=float(profile.get("electricity_tax_rate") or 0.0511269632),
+    )
     try:
         prices, _ = pvpc.pvpc_month_prices(db, contract, year, month)
     except pvpc.PvpcError:
@@ -142,8 +133,6 @@ def ensure_tariff_price(db: Session, contract: Contract, year: int, month: int) 
     row.social_bond_eur_month = float(profile.get("social_bond_eur_month") or 0.0)
     row.vat_rate = float(profile.get("vat_rate") or 0.21)
     row.electricity_tax_rate = float(profile.get("electricity_tax_rate") or 0.0511269632)
-    db.commit()
-    db.refresh(row)
     return row
 
 

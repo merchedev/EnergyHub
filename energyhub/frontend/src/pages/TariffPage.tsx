@@ -1120,7 +1120,7 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                       </div>
                     </div>
                   </div>
-                  {comparatorData.missing_hours > 0 ? (
+                  {comparatorData.missing_hours > 0 && comparatorData.pvpc_coverage < 0.95 ? (
                     <Banner tone="warning">
                       <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                       <span>

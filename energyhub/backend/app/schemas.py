@@ -210,6 +210,7 @@ class ComparatorOut(BaseModel):
     alternative_energy_cost: float
     pvpc_available: bool
     missing_hours: int
+    pvpc_coverage: float
     notes: list[str] = []
 
 
