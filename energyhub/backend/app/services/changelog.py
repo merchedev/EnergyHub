@@ -15,6 +15,7 @@ ADDON_SLUG = os.getenv("ENERGYHUB_SLUG", "energyhub")
 VERSION_RE = re.compile(
     r"^##\s+\[?v?(\d+\.\d+\.\d+)\]?(?:\s*[-–]\s*(\d{4}-\d{2}-\d{2}))?"
 )
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @dataclass
@@ -67,6 +68,7 @@ def version_gt(left: str, right: str) -> bool:
 def parse_changelog(text: str) -> list[ChangelogEntry]:
     entries: list[ChangelogEntry] = []
     current: ChangelogEntry | None = None
+    expecting_date = False
     for raw_line in text.splitlines():
         line = raw_line.strip()
         match = VERSION_RE.match(line)
@@ -74,9 +76,18 @@ def parse_changelog(text: str) -> list[ChangelogEntry]:
             if current is not None:
                 entries.append(current)
             current = ChangelogEntry(version=match.group(1), date=match.group(2), notes=[])
+            expecting_date = not bool(current.date)
             continue
         if current is None:
             continue
+        if expecting_date:
+            if DATE_RE.match(line):
+                current.date = line
+                expecting_date = False
+                continue
+            if not line:
+                continue
+            expecting_date = False
         if line.startswith("#"):
             continue
         if line.startswith("- "):

@@ -22,4 +22,4 @@ La app guarda los datos en `/data` y funciona dentro de Home Assistant con Ingre
 - El bono social solo se aplica a PVPC. Con tarifas de mercado libre se muestra la financiación regulada y un aviso.
 - El catálogo comunitario de otras comercializadoras es orientativo; confirma precios y cuotas con tu factura.
 - Las estimaciones son orientativas y no sustituyen a la factura oficial.
-- La página **Novedades** muestra únicamente las versiones posteriores a la instalada. El changelog completo está en el repositorio.
+- La página **Novedades** y el diálogo de actualización de Home Assistant muestran únicamente las versiones posteriores a la instalada. El changelog completo está en el repositorio.

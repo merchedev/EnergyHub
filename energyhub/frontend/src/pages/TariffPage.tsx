@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   BadgeEuro,
   CalendarDays,
@@ -56,6 +57,12 @@ import type {
 } from '../types'
 
 type Tab = 'contract' | 'prices' | 'bill' | 'comparator' | 'esios'
+
+const TAB_VALUES: Tab[] = ['contract', 'prices', 'bill', 'comparator', 'esios']
+
+function isTab(value: string | null): value is Tab {
+  return value !== null && TAB_VALUES.includes(value as Tab)
+}
 
 interface CurrentTariffResponse {
   contract: Contract
@@ -163,7 +170,16 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
     reload: reloadComparator,
   } = useApi<ComparatorResponse>(`/comparator?month=${comparatorMonth}`)
 
-  const [tab, setTab] = useState<Tab>('contract')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get('tab')
+    return isTab(requested) ? requested : 'contract'
+  })
+
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    if (isTab(requested)) setTab(requested)
+  }, [searchParams])
   const [contractForm, setContractForm] = useState(() =>
     data?.contract
       ? contractToForm(data.contract)
@@ -1384,6 +1400,37 @@ export function TariffPage({ onChanged }: { onChanged: () => Promise<void> }) {
                 <div className="field-label">Consultado</div>
                 <div>{formatDateTime(proposal.fetched_at)}</div>
               </div>
+            </div>
+            <div className="banner mt-12">
+              <ExternalLink size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                <strong>Fuente:</strong> API pública de Pepe Energy, la misma que usa su web para
+                publicar los precios del último mes. Nada se aplica hasta que confirmes la propuesta.
+              </span>
+            </div>
+            <div className="flex gap-8 mt-8" style={{ flexWrap: 'wrap' }}>
+              {selectedProfile?.source_url ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    window.open(selectedProfile.source_url, '_blank', 'noopener,noreferrer')
+                  }
+                >
+                  Ver tarifa en Pepe <ExternalLink size={12} />
+                </Button>
+              ) : null}
+              {selectedProfile?.price_api_url ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    window.open(selectedProfile.price_api_url, '_blank', 'noopener,noreferrer')
+                  }
+                >
+                  Ver API de Pepe <ExternalLink size={12} />
+                </Button>
+              ) : null}
             </div>
             <div className="banner mt-12">
               <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />

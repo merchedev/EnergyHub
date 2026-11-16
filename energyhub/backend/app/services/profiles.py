@@ -25,6 +25,7 @@ BUILTIN_PROFILES: dict[str, dict] = {
         "requires_manual_prices": False,
         "notes": "Precios mensuales de punta, llano y valle publicados por Pepe.",
         "source_url": "https://www.pepeenergy.com/tarifas-luz/tarifa-variable-luz",
+        "price_api_url": "https://shared-api.pepeenergy.com/prices/electricity/last-month",
         "last_updated": "2026-10-01",
     },
     "pepe_estable": {
@@ -48,6 +49,7 @@ BUILTIN_PROFILES: dict[str, dict] = {
         "requires_manual_prices": False,
         "notes": "Precio fijo para todas las horas; se actualiza desde Pepe.",
         "source_url": "https://www.pepeenergy.com/tarifas-luz/tarifa-estable-luz",
+        "price_api_url": "https://shared-api.pepeenergy.com/prices/electricity/last-month",
         "last_updated": "2026-10-01",
     },
     "pvpc_2td": {

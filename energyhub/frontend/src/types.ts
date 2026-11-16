@@ -91,6 +91,7 @@ export interface TariffProfile {
   requires_manual_prices: boolean
   notes: string
   source_url?: string
+  price_api_url?: string
   last_updated?: string
 }
 

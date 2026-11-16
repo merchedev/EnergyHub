@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.2.1 - 2026-11-16
+## 0.2.2
+2026-11-16
+
+- Changelog compatible con el filtro de Home Assistant: el diálogo de actualización muestra solo las versiones pendientes, no todo el historial.
+- Enlaces directos desde las recomendaciones a Tarifa, calibración, precios, horarios o dispositivos según la acción.
+- La propuesta de precios de Pepe indica su origen y enlaza a la tarifa oficial y a la API pública usada.
+- El perfil de Pepe expone la URL de la API de precios y la página oficial de la tarifa.
+- Tests del filtrado del changelog con el mismo patrón que usa Home Assistant.
+
+## 0.2.1
+2026-11-16
 
 - La ficha de dispositivo oculta potencia, ciclo de trabajo y standby cuando usas el consumo anual.
 - Resumen del consumo anual: media diaria y potencia media equivalente.
@@ -8,7 +18,8 @@
 - Acceso directo a Tarifa desde la vista previa para confirmar o actualizar precios.
 - Tests de la vista previa sin precios y del cálculo por consumo anual.
 
-## 0.2.0 - 2026-11-16
+## 0.2.0
+2026-11-16
 
 - Selector de compañía y tarifa con perfiles: Pepe Variable, Pepe Estable, PVPC y catálogo comunitario/manual.
 - Autorelleno de cuota, financiación del bono social, alquiler de contador, impuestos y potencia.
@@ -23,13 +34,15 @@
 - Migración automática de contratos de versiones anteriores.
 - Tests de perfiles, Pepephone, PVPC, bono social, facturación horaria y comparador.
 
-## 0.1.2 - 2026-11-16
+## 0.1.2
+2026-11-16
 
 - Corrige el arranque del contenedor cuando no existe `.env` y la ruta no tiene cuatro niveles de padres.
 - Añade prueba de arranque real del contenedor Docker en CI.
 - Mantiene la página Novedades filtrada por versión instalada.
 
-## 0.1.1 - 2026-11-16
+## 0.1.1
+2026-11-16
 
 - Repositorio público y URLs de instalación actualizadas.
 - Nueva página **Novedades** que muestra solo las versiones posteriores a la instalada.
@@ -43,7 +56,8 @@
 - Añadido `hassio_api` para consultar la versión y el changelog desde Home Assistant.
 - Documentación de arquitectura, estimación, tarifas y contribución.
 
-## 0.1.0 - 2026-11-16
+## 0.1.0
+2026-11-16
 
 - Primera alpha de EnergyHub.
 - Panel de resumen con factura estimada, coste por tramo y ranking de dispositivos.

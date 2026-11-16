@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowRight,
@@ -40,9 +41,28 @@ interface AutomationItem {
   created_at: string
 }
 
+function actionTarget(rec: Recommendation): { to: string; label: string } | null {
+  if (rec.rule === 'calibration') {
+    return rec.id === 'rec-calibrate'
+      ? { to: '/tariff?tab=bill', label: 'Ir a calibrar' }
+      : { to: '/devices', label: 'Revisar dispositivos' }
+  }
+  if (rec.rule === 'price_provisional') {
+    return { to: '/tariff?tab=prices', label: 'Revisar precios' }
+  }
+  if (rec.rule === 'shift_to_valle') {
+    return { to: '/schedule', label: 'Ver horarios' }
+  }
+  if (['top_consumer', 'standby', 'always_on', 'data_quality', 'add_devices'].includes(rec.rule)) {
+    return { to: '/devices', label: 'Ver dispositivos' }
+  }
+  return null
+}
+
 export function RecommendationsPage({ onCountChange }: { onCountChange?: (count: number) => void }) {
   const { showToast } = useToast()
   const copy = useClipboard()
+  const navigate = useNavigate()
   const { data, loading, error, reload } = useApi<{ items: Recommendation[] }>('/recommendations')
   const { data: automationsData, reload: reloadAutomations } = useApi<{ items: AutomationItem[] }>(
     '/automations',
@@ -202,6 +222,7 @@ export function RecommendationsPage({ onCountChange }: { onCountChange?: (count:
         <div className="card-grid mt-12">
           {filtered.map((rec) => {
             const createdId = created[rec.id]
+            const target = actionTarget(rec)
             return (
               <Card className="span-6" key={rec.id}>
                 <div className={`recommendation ${rec.severity}`} style={{ border: 0, background: 'transparent' }}>
@@ -246,9 +267,17 @@ export function RecommendationsPage({ onCountChange }: { onCountChange?: (count:
                   {rec.savings_eur_month > 0 ? (
                     <div className="rec-savings">Ahorro estimado: {eur(rec.savings_eur_month)}/mes</div>
                   ) : null}
-                  <div className="banner mt-12" style={{ background: 'var(--bg-soft)' }}>
+                  <div
+                    className="banner mt-12"
+                    style={{ background: 'var(--bg-soft)', flexWrap: 'wrap', alignItems: 'center' }}
+                  >
                     <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} />
-                    <span>{rec.action}</span>
+                    <span style={{ flex: '1 1 180px' }}>{rec.action}</span>
+                    {target ? (
+                      <Button size="sm" variant="ghost" onClick={() => navigate(target.to)}>
+                        {target.label} <ArrowRight size={13} />
+                      </Button>
+                    ) : null}
                   </div>
                   <div className="rec-footer">
                     <div className="flex gap-8" style={{ flexWrap: 'wrap' }}>

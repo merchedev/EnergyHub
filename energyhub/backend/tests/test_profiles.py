@@ -7,6 +7,7 @@ def test_builtin_profiles_are_available() -> None:
     profile = profiles.get_profile("pepe_variable")
     assert profile["company"] == "Pepe Energy"
     assert profile["supports_pepephone_discount"] is True
+    assert profile["price_api_url"].startswith("https://shared-api.pepeenergy.com/")
     defaults = profiles.profile_defaults("pepe_variable")
     assert defaults["price_source"] == "pepe_api_variable"
     assert defaults["service_fee_eur_month"] > 0

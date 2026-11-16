@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import app.services.changelog as changelog_module
@@ -50,13 +51,18 @@ def test_version_comparison() -> None:
 def test_repository_changelog_contains_current_version() -> None:
     path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
     entries = parse_changelog(path.read_text(encoding="utf-8"))
+    assert any(entry.version == "0.2.2" for entry in entries)
     assert any(entry.version == "0.2.1" for entry in entries)
     assert any(entry.version == "0.2.0" for entry in entries)
     assert any(entry.version == "0.1.2" for entry in entries)
     assert any(entry.version == "0.1.1" for entry in entries)
     assert any(entry.version == "0.1.0" for entry in entries)
-    assert [entry.version for entry in newer_entries(entries, "0.2.0")] == ["0.2.1"]
-    assert [entry.version for entry in newer_entries(entries, "0.1.2")] == ["0.2.1", "0.2.0"]
+    assert [entry.version for entry in newer_entries(entries, "0.2.1")] == ["0.2.2"]
+    assert [entry.version for entry in newer_entries(entries, "0.1.2")] == [
+        "0.2.2",
+        "0.2.1",
+        "0.2.0",
+    ]
 
 
 async def test_supervisor_changelog_filters_installed_version(monkeypatch) -> None:
@@ -79,3 +85,33 @@ async def test_supervisor_changelog_filters_installed_version(monkeypatch) -> No
     assert result.checked is True
     assert result.update_available is True
     assert [entry.version for entry in result.entries] == ["0.2.0", "0.1.1"]
+
+
+def _home_assistant_release_notes(text: str, installed: str, latest: str) -> str:
+    """Misma extracción que homeassistant/components/hassio/update.py."""
+    pattern = re.compile(
+        rf"^#* {re.escape(latest)}\n"
+        rf"(?:^(?!#* {re.escape(installed)}).*\n)*",
+        re.MULTILINE,
+    )
+    match = pattern.search(text)
+    return match.group(0) if match else text
+
+
+def test_repository_changelog_is_compatible_with_home_assistant() -> None:
+    path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+    text = path.read_text(encoding="utf-8")
+    entries = parse_changelog(text)
+    assert entries[0].version == "0.2.2"
+    assert entries[0].date == "2026-11-16"
+    assert entries[0].notes[0].startswith("Changelog compatible")
+
+    only_latest = _home_assistant_release_notes(text, "0.2.1", "0.2.2")
+    assert "## 0.2.2" in only_latest
+    assert "## 0.2.1" not in only_latest
+
+    two_versions = _home_assistant_release_notes(text, "0.1.2", "0.2.2")
+    assert "## 0.2.2" in two_versions
+    assert "## 0.2.1" in two_versions
+    assert "## 0.2.0" in two_versions
+    assert "## 0.1.2" not in two_versions

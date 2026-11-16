@@ -22,10 +22,11 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 - Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
 - Factura estimada, proyección y calibración con la factura real.
 - Comparador Pepe vs PVPC con el mismo consumo y potencia.
-- Recomendaciones con ahorro estimado y YAML de automatización.
+- Recomendaciones con ahorro estimado, enlaces directos a la acción y YAML de automatización.
+- Propuesta de precios de Pepe con origen, enlace a la tarifa oficial y a la API pública.
 - Creación de automatizaciones en HA con confirmación y opción de deshacer (si HA está conectado).
 - Sensor ESIOS opcional como referencia de mercado.
-- Página **Novedades**: muestra solo las versiones posteriores a la instalada, no todo el historial.
+- Página **Novedades** y diálogo de actualización de HA: solo las versiones pendientes, no todo el historial.
 - Datos locales en SQLite, dentro de `/data`.
 
 ## Instalación en Home Assistant OS / Supervised
@@ -92,6 +93,10 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md), [`docs/estimatio
 La ficha de dispositivo permite usar solo el consumo anual de la etiqueta: oculta potencia, ciclo y standby, y muestra la media diaria y la potencia equivalente.
 
 ![Ficha de dispositivo con consumo anual](docs/screenshots/device-form.png)
+
+La propuesta de precios de Pepe indica de dónde salen los datos y enlaza a la tarifa oficial y a la API pública utilizada.
+
+![Propuesta de precios de Pepe](docs/screenshots/price-proposal.png)
 
 | Resumen | Dispositivos |
 |---|---|
