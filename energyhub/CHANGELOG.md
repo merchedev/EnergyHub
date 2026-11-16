@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 - 2026-11-16
+
+- Corrige el arranque del contenedor cuando no existe `.env` y la ruta no tiene cuatro niveles de padres.
+- Añade prueba de arranque real del contenedor Docker en CI.
+- Mantiene la página Novedades filtrada por versión instalada.
+
 ## 0.1.1 - 2026-11-16
 
 - Repositorio público y URLs de instalación actualizadas.

@@ -49,4 +49,16 @@ jobs:
         with:
           context: ./energyhub
           push: false
+          load: true
           tags: energyhub:ci
+      - name: Probar arranque del contenedor
+        run: |
+          docker run -d --name energyhub-ci -p 8099:8099 -e ENERGYHUB_DEMO=1 energyhub:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs energyhub-ci
+          exit 1

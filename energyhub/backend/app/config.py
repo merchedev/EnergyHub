@@ -6,12 +6,27 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# En desarrollo, permite copiar .env.example a .env en la raíz del repositorio.
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
-load_dotenv()
+
+def _load_env_files() -> None:
+    """Carga .env sin asumir una profundidad de ruta concreta.
+
+    En el contenedor el archivo está en /app/app/config.py y no existe
+    parents[3]; en local sí. Buscamos hacia arriba y nunca indexamos fuera
+    de la lista.
+    """
+    config_path = Path(__file__).resolve()
+    for parent in list(config_path.parents)[:4]:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            load_dotenv(candidate)
+            break
+    load_dotenv()
+
+
+_load_env_files()
 
 APP_NAME = "EnergyHub"
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 DEFAULT_TIMEZONE = "Europe/Madrid"
 GITHUB_REPO_URL = "https://github.com/merchedev/EnergyHub"
 CHANGELOG_URL = os.getenv(
