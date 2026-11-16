@@ -29,7 +29,7 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 
 - **Ingress only**: no se exponen puertos. El frontend usa rutas relativas (`api/...`) para funcionar bajo cualquier prefijo de Ingress.
 - **SQLite**: suficiente para una vivienda y para las copias de seguridad de HA. El archivo está en `/data/energyhub.db`.
-- **Sin dependencia de sensores**: el motor funciona con potencia, horas, ciclos y perfiles típicos. Si existen entidades de HA, se pueden usar como mejora.
+- **Sin dependencia de sensores**: el motor funciona con potencia, horas, ciclos y perfiles típicos. Si existe una entidad de energía acumulada en HA, su lectura mensual sustituye a la estimación; si falla, se vuelve al cálculo manual.
 - **Precios de Pepe**: se leen de la API pública que usa su web y se guardan como propuesta pendiente. La app nunca cambia precios sin confirmación.
 - **Precios por tramo**: la Tarifa Variable de Pepe publica precios mensuales de punta, llano y valle. No se usa el precio horario de ESIOS para calcular esa factura.
 - **PVPC**: se obtiene de la API pública REData de REE y se factura hora a hora.
@@ -42,10 +42,11 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 ## Backend
 
 - `app/main.py`: lifespan, base de datos, montaje del frontend y CORS de desarrollo.
-- `app/models.py`: contrato, versiones de tarifa, propuestas de precio, dispositivos, calibraciones, recomendaciones y automatizaciones creadas.
+- `app/models.py`: contrato, versiones de tarifa, propuestas de precio, dispositivos, lecturas mensuales de energía, calibraciones, recomendaciones y automatizaciones creadas.
 - `app/services/periods.py`: calendario 2.0TD, festivos, horas reales por periodo y ventanas valle.
 - `app/services/tariff.py`: selección de precios por mes, término de potencia, cuotas, impuestos y factura.
 - `app/services/estimation.py`: reparto de energía por tramo para cada modo de dispositivo.
+- `app/services/energy_readings.py`: lectura de contadores de energía de Home Assistant y caché mensual.
 - `app/services/pepe.py`: cliente y parser de la API pública de Pepe.
 - `app/services/ha.py`: cliente REST de Home Assistant, entidades, historial y automatizaciones.
 - `app/services/recommendations.py`: reglas de ahorro, YAML y payload de automatización.

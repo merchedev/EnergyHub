@@ -102,6 +102,19 @@ kWh_mes = kWh_ciclo × ciclos_semana × días / 7
 
 Los ciclos se reparten entre los días y la franja típica. El standby se calcula por las horas restantes si el aparato está siempre enchufado.
 
+### Entidad de energía de Home Assistant
+
+Si el aparato expone un contador de energía acumulada (`device_class: energy`, unidad kWh o Wh, preferiblemente `state_class: total_increasing`), se puede seleccionar en la ficha:
+
+- La app lee la primera y la última lectura del mes desde el historial de Home Assistant.
+- Convierte Wh o MWh a kWh.
+- Si la lectura final es menor que la inicial, no la usa y mantiene la estimación manual.
+- El consumo real se reparte por la franja típica del aparato; el reparto por tramos es aproximado si solo se conoce el total mensual.
+- Para el mes actual se actualiza como máximo cada 15 minutos. Los meses cerrados se conservan.
+- Si la entidad no está disponible o no tiene historial, se usa la estimación por horas o ciclos como respaldo.
+
+La entidad de estado (encendido/apagado) es opcional en esta versión y sirve como información auxiliar; el consumo mensual sale de la entidad de energía.
+
 ### Calibración
 
 Si la factura real consume `kWh_real` y la app estima `kWh_estimado`:
