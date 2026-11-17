@@ -143,6 +143,7 @@ class DeviceEnergyReading(Base):
     start_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     end_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hourly_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

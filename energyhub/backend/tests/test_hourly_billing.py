@@ -215,3 +215,53 @@ def test_entity_mode_uses_real_ha_energy() -> None:
     assert est.confidence == "alta"
     assert abs(est.active_kwh - 20.0) < 0.01
     assert abs(est.standby_kwh) < 0.01
+
+
+def test_entity_mode_uses_exact_hourly_ha_energy() -> None:
+    contract = make_contract()
+    curve = prices.zero_month_curve(contract, 2026, 11)
+    for point in curve.points:
+        point.price = 0.2
+    p1_hour = next(
+        point.local_dt
+        for point in curve.points
+        if point.local_dt.weekday() == 0 and point.local_dt.hour == 11
+    )
+    p3_hour = next(
+        point.local_dt
+        for point in curve.points
+        if point.local_dt.weekday() == 0 and point.local_dt.hour == 3
+    )
+    device = Device(
+        id=1,
+        name="Lavadora Samsung",
+        category="washing_machine",
+        mode="entity",
+        power_active_w=600,
+        power_standby_w=0,
+        duty_cycle_pct=100,
+        annual_kwh=None,
+        hours_per_day=1,
+        cycles_per_week=0,
+        minutes_per_cycle=0,
+        always_plugged=True,
+        flexibility="flexible",
+        entity_id="switch.lavadora",
+        energy_entity_id="sensor.lavadora_energy",
+        enabled=True,
+    )
+    est = estimation.estimate_device_hourly(
+        device,
+        contract,
+        curve,
+        2026,
+        11,
+        real_hourly={p1_hour: 5.0, p3_hour: 10.0},
+    )
+    assert est.energy_source == "ha_energy_sensor"
+    assert est.energy_resolution == "hourly"
+    assert abs(est.energy_kwh - 15.0) < 0.01
+    assert abs(est.by_period["P1"] - 5.0) < 0.01
+    assert abs(est.by_period["P3"] - 10.0) < 0.01
+    assert abs(est.min_cost_eur - est.cost_eur) < 0.01
+    assert abs(est.max_cost_eur - est.cost_eur) < 0.01

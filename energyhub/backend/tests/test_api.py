@@ -198,3 +198,4 @@ def test_dashboard_uses_stored_ha_energy_reading() -> None:
         data = dashboard.json()
         assert abs(data["totals"]["energy_kwh"] - 25.0) < 0.01
         assert data["devices"][0]["energy_source"] == "ha_energy_sensor"
+        assert data["devices"][0]["energy_resolution"] == "monthly"

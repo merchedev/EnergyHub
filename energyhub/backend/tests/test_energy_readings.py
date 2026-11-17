@@ -165,7 +165,10 @@ async def test_refresh_readings_stores_month_energy_and_skips_complete_month() -
 class FakeStatsHaClient(FakeHaClient):
     async def get_statistics(self, _entity_id: str, _start, _end, period: str = "hour"):
         assert period == "hour"
-        return [{"change": 12.5}, {"change": 7.5}]
+        return [
+            {"start": "2026-01-01T00:00:00+00:00", "change": 12.5},
+            {"start": "2026-01-01T01:00:00+00:00", "change": 7.5},
+        ]
 
 
 async def test_fetch_month_energy_prefers_long_term_statistics() -> None:
@@ -180,3 +183,5 @@ async def test_fetch_month_energy_prefers_long_term_statistics() -> None:
     )
     assert result.error is None
     assert result.energy_kwh == 20.0
+    assert result.hourly is not None
+    assert abs(sum(result.hourly.values()) - 20.0) < 0.01

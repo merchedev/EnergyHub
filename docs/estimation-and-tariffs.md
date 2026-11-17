@@ -109,7 +109,8 @@ Si el aparato expone un contador de energía acumulada (`device_class: energy`, 
 - La app usa las estadísticas de largo plazo de Home Assistant cuando están disponibles; si no, recurre al historial de estados.
 - Convierte Wh o MWh a kWh.
 - Si la lectura final es menor que la inicial, no la usa y mantiene la estimación manual.
-- El consumo real se reparte por la franja típica del aparato; el reparto por tramos es aproximado si solo se conoce el total mensual.
+- Si las estadísticas incluyen el cambio de energía por hora, el reparto por punta, llano y valle es exacto para cada hora.
+- Si solo se conoce el total mensual, el reparto por tramos usa la franja típica del aparato y es aproximado.
 - Para el mes actual se actualiza como máximo cada 15 minutos. Los meses cerrados se conservan.
 - Si la entidad no está disponible o no tiene historial, se usa la estimación por horas o ciclos como respaldo.
 

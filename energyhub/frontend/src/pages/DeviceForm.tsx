@@ -562,8 +562,8 @@ export function DeviceForm({
                 <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>
                   La <strong>entidad de energía</strong> debe ser un contador acumulado en kWh o Wh.
-                  Si la eliges, el consumo del mes sale de Home Assistant. La entidad de estado es
-                  opcional y queda guardada como referencia; el reparto por horas usa la franja típica.
+                  Si hay estadísticas horarias, el reparto por punta, llano y valle es exacto; si solo
+                  hay total mensual, se usa la franja típica. La entidad de estado es opcional.
                 </span>
               </div>
               <Field
@@ -601,7 +601,7 @@ export function DeviceForm({
               ) : null}
               <Field
                 label="Entidad de estado (opcional)"
-                hint="Se guarda como referencia. El reparto actual usa la franja típica."
+                hint="Se guarda como referencia. El reparto usa la entidad de energía."
               >
                 <EntityPicker
                   entities={entities}
@@ -705,7 +705,18 @@ export function DeviceForm({
                 <strong>{previewHasPrice ? eur(preview.cost_eur) : '—'}</strong>
               </div>
               {preview.energy_source === 'ha_energy_sensor' ? (
-                <Badge tone="green">Consumo real desde Home Assistant</Badge>
+                <>
+                  <Badge tone="green">
+                    {preview.energy_resolution === 'hourly'
+                      ? 'Consumo real horario desde Home Assistant'
+                      : 'Consumo real mensual desde Home Assistant'}
+                  </Badge>
+                  <div className="small muted">
+                    {preview.energy_resolution === 'hourly'
+                      ? 'El reparto por punta, llano y valle usa la energía real de cada hora.'
+                      : 'El total es real; el reparto por tramos usa la franja típica del aparato.'}
+                  </div>
+                </>
               ) : form.mode === 'entity' && preview.energy_entity_id ? (
                 <div className="banner warning">
                   <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -778,7 +789,9 @@ export function DeviceForm({
                   Rango según cuándo lo uses: {eur(preview.min_cost_eur)} – {eur(preview.max_cost_eur)}.
                 </div>
               ) : null}
-              {typicalWindows.length > 0 && form.mode !== 'always_on' ? (
+              {typicalWindows.length > 0 &&
+              form.mode !== 'always_on' &&
+              preview.energy_resolution !== 'hourly' ? (
                 <div className="small muted">
                   Franja típica: {typicalWindows.map((window) => `${window.start}–${window.end}`).join(', ')}.
                   Puedes cambiarla después.
@@ -803,9 +816,11 @@ export function DeviceForm({
           <div className="small muted" style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
             {annualOnly
               ? 'Repartimos el consumo anual de la etiqueta entre las 24 h y aplicamos el precio de cada tramo.'
-              : form.mode === 'always_on'
-                ? 'Repartimos el consumo entre las 24 h y aplicamos el precio de cada tramo.'
-                : 'Repartimos las horas según la franja típica de la categoría. El rango muestra el mínimo en valle y el máximo en punta.'}
+              : preview?.energy_resolution === 'hourly'
+                ? 'Usamos la energía real de cada hora de Home Assistant; el reparto por tramos es exacto.'
+                : form.mode === 'always_on'
+                  ? 'Repartimos el consumo entre las 24 h y aplicamos el precio de cada tramo.'
+                  : 'Repartimos las horas según la franja típica de la categoría. El rango muestra el mínimo en valle y el máximo en punta.'}
           </div>
         </div>
       </div>

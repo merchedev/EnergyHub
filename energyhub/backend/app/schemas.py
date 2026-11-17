@@ -176,6 +176,7 @@ class DevicePreviewOut(BaseModel):
     price_source: str | None = None
     currency: str = "EUR"
     energy_source: str = "estimated"
+    energy_resolution: str = "estimated"
     energy_entity_id: str | None = None
     energy_error: str | None = None
 

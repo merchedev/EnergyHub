@@ -26,6 +26,7 @@ class DeviceEstimate:
     notes: list[str] = field(default_factory=list)
     hourly: dict[datetime, float] = field(default_factory=dict)
     energy_source: str = "estimated"
+    energy_resolution: str = "estimated"
 
     def period_rows(self, price: TariffPrice | None) -> list[dict]:
         prices = period_prices(price) if price is not None else {p: 0.0 for p in periods.PERIOD_ORDER}
@@ -259,6 +260,7 @@ def estimate_device_hourly(
     month: int,
     calibration: float = 1.0,
     real_energy_kwh: float | None = None,
+    real_hourly: dict[datetime, float] | None = None,
 ) -> DeviceEstimate:
     """Estimate a device by allocating its energy to each local hour."""
     try:
@@ -271,58 +273,86 @@ def estimate_device_hourly(
     if not points:
         return DeviceEstimate(notes=["No hay precios para este mes."])
     hourly: dict[datetime, float] = {point.local_dt: 0.0 for point in points}
+    normalized_hourly: dict[datetime, float] = {}
+    if device.mode == "entity" and real_hourly:
+        for moment, energy in real_hourly.items():
+            try:
+                if moment.tzinfo is None:
+                    moment = moment.replace(tzinfo=tz)
+                local_hour = moment.astimezone(tz).replace(minute=0, second=0, microsecond=0)
+                value = float(energy)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                normalized_hourly[local_hour] = normalized_hourly.get(local_hour, 0.0) + value
+    exact_hourly = bool(normalized_hourly) and sum(normalized_hourly.values()) > 0
     active_total, _unused, active_notes = _active_energy(device, days)
     active_hours = _active_hours_per_day(device)
     standby_total = _standby_energy(device, days, active_hours)
     energy_source = "estimated"
-    if device.mode == "entity" and real_energy_kwh is not None:
-        active_total = max(0.0, float(real_energy_kwh))
+    energy_resolution = "estimated"
+    factor = max(0.0, float(calibration or 1.0))
+    if exact_hourly:
+        hourly = {
+            point.local_dt: normalized_hourly.get(point.local_dt, 0.0) for point in points
+        }
+        active_total = sum(hourly.values())
         standby_total = 0.0
-        active_notes = ["Consumo real de la entidad de energía de Home Assistant."]
+        active_notes = ["Consumo real horario de Home Assistant; reparto exacto por tramo."]
         energy_source = "ha_energy_sensor"
-    elif device.mode == "entity" and getattr(device, "energy_entity_id", None):
-        active_notes.append(
-            "Sin lectura de la entidad de energía para este mes; se usa la estimación por horas."
-        )
-    notes.extend(active_notes)
-    factor = 1.0 if energy_source == "ha_energy_sensor" else max(0.0, float(calibration or 1.0))
-    if device.mode == "always_on":
-        total = (active_total + standby_total) * factor
-        per_hour = total / len(points)
-        for point in points:
-            hourly[point.local_dt] += per_hour
+        energy_resolution = "hourly"
+        factor = 1.0
     else:
-        windows = _parse_windows(device)
-        if not windows:
-            windows = [{"start": "18:00", "end": "22:00", "weight": 1.0}]
-            notes.append("Sin franja típica: se usa de 18:00 a 22:00 como aproximación.")
-        total_weight = sum(max(0.0, float(window.get("weight", 1.0))) for window in windows) or 1.0
-        for day_offset in range(days):
-            day = date(year, month, 1) + timedelta(days=day_offset)
-            daily_active = (active_total / days) if days else 0.0
-            for window in windows:
-                share = max(0.0, float(window.get("weight", 1.0))) / total_weight
-                energy_share = daily_active * share * factor
-                fractions = periods.window_hour_fractions(
-                    day, window["start"], window["end"], tz=tz
-                )
-                for hour_dt, fraction in fractions.items():
-                    if hour_dt in hourly:
-                        hourly[hour_dt] += energy_share * fraction
-        if standby_total > 0:
-            per_hour = standby_total * factor / len(points)
+        if device.mode == "entity" and real_energy_kwh is not None:
+            active_total = max(0.0, float(real_energy_kwh))
+            standby_total = 0.0
+            active_notes = ["Consumo real de la entidad de energía de Home Assistant."]
+            energy_source = "ha_energy_sensor"
+            energy_resolution = "monthly"
+            factor = 1.0
+        elif device.mode == "entity" and getattr(device, "energy_entity_id", None):
+            active_notes.append(
+                "Sin lectura de la entidad de energía para este mes; se usa la estimación por horas."
+            )
+    notes.extend(active_notes)
+    if not exact_hourly:
+        if device.mode == "always_on":
+            total = (active_total + standby_total) * factor
+            per_hour = total / len(points)
             for point in points:
                 hourly[point.local_dt] += per_hour
-        prefix = (
-            "Consumo real repartido según la franja típica de "
-            if energy_source == "ha_energy_sensor"
-            else "Estimación con franja típica de "
-        )
-        notes.append(
-            prefix
-            + ", ".join(f"{window['start']}–{window['end']}" for window in windows)
-            + "."
-        )
+        else:
+            windows = _parse_windows(device)
+            if not windows:
+                windows = [{"start": "18:00", "end": "22:00", "weight": 1.0}]
+                notes.append("Sin franja típica: se usa de 18:00 a 22:00 como aproximación.")
+            total_weight = sum(max(0.0, float(window.get("weight", 1.0))) for window in windows) or 1.0
+            for day_offset in range(days):
+                day = date(year, month, 1) + timedelta(days=day_offset)
+                daily_active = (active_total / days) if days else 0.0
+                for window in windows:
+                    share = max(0.0, float(window.get("weight", 1.0))) / total_weight
+                    energy_share = daily_active * share * factor
+                    fractions = periods.window_hour_fractions(
+                        day, window["start"], window["end"], tz=tz
+                    )
+                    for hour_dt, fraction in fractions.items():
+                        if hour_dt in hourly:
+                            hourly[hour_dt] += energy_share * fraction
+            if standby_total > 0:
+                per_hour = standby_total * factor / len(points)
+                for point in points:
+                    hourly[point.local_dt] += per_hour
+            prefix = (
+                "Consumo real repartido según la franja típica de "
+                if energy_source == "ha_energy_sensor"
+                else "Estimación con franja típica de "
+            )
+            notes.append(
+                prefix
+                + ", ".join(f"{window['start']}–{window['end']}" for window in windows)
+                + "."
+            )
     by_period = {p: 0.0 for p in periods.PERIOD_ORDER}
     cost_by_period = {p: 0.0 for p in periods.PERIOD_ORDER}
     price_by_hour: dict[datetime, PricePoint] = {point.local_dt: point for point in points}
@@ -337,7 +367,7 @@ def estimate_device_hourly(
     total_energy = sum(hourly.values())
     active_scaled = active_total * factor
     standby_scaled = standby_total * factor
-    if device.mode == "always_on" or total_energy <= 0:
+    if energy_resolution == "hourly" or device.mode == "always_on" or total_energy <= 0:
         min_cost = max_cost = total_cost
     else:
         available_prices = [point.price for point in points if point.price > 0]
@@ -361,4 +391,5 @@ def estimate_device_hourly(
         notes=notes,
         hourly=hourly,
         energy_source=energy_source,
+        energy_resolution=energy_resolution,
     )

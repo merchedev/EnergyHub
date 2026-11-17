@@ -74,9 +74,22 @@ def _migrate_devices() -> None:
             )
 
 
+def _migrate_device_readings() -> None:
+    inspector = inspect(engine)
+    if "device_energy_readings" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("device_energy_readings")}
+    if "hourly_json" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE device_energy_readings ADD COLUMN hourly_json TEXT")
+            )
+
+
 def init_db() -> None:
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _migrate_contracts()
     _migrate_devices()
+    _migrate_device_readings()

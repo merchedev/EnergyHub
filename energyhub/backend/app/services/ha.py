@@ -67,8 +67,6 @@ class HaClient:
         parsed = urlparse(self.base_url)
         scheme = "wss" if parsed.scheme == "https" else "ws"
         path = parsed.path.rstrip("/")
-        if path.endswith("/api"):
-            path = path[:-4]
         return f"{scheme}://{parsed.netloc}{path}/websocket"
 
     async def get_statistics(

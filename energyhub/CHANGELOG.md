@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2
+2026-11-17
+
+- Reparto exacto por hora cuando Home Assistant devuelve estadísticas horarias de energía.
+- El coste por punta, llano y valle usa la energía real de cada hora, no la franja típica.
+- Si solo hay total mensual, se mantiene el reparto aproximado por franja típica y se indica en la interfaz.
+- La ficha distingue entre consumo real horario y consumo real mensual.
+- Nueva columna `hourly_json` en las lecturas mensuales y migración automática.
+- Corregida la URL WebSocket de Home Assistant para usar `/api/websocket`.
+- Tests de reparto exacto y de estadísticas horarias.
+
 ## 0.3.1
 2026-11-17
 

@@ -20,7 +20,7 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 - Precios mensuales por tramo o precios horarios, calendario y festivos.
 - Dispositivos sin sensores: siempre enchufado, horas al día, ciclos o entidad de HA.
 - Buscador de entidades de Home Assistant para dispositivos y sensores ESIOS.
-- Consumo real de dispositivos desde entidades de energía acumulada (kWh/Wh), con respaldo manual.
+- Consumo real de dispositivos desde entidades de energía acumulada (kWh/Wh), con reparto horario exacto cuando Home Assistant expone estadísticas por hora.
 - Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
 - Factura estimada, proyección y calibración con la factura real.
 - Comparador Pepe vs PVPC con el mismo consumo y potencia.
@@ -100,7 +100,7 @@ La propuesta de precios de Pepe indica de dónde salen los datos y enlaza a la t
 
 ![Propuesta de precios de Pepe](docs/screenshots/price-proposal.png)
 
-La ficha permite buscar entidades de Home Assistant y usar un contador de energía acumulada. Si Home Assistant devuelve una lectura válida, el consumo mensual del aparato pasa a ser real.
+La ficha permite buscar entidades de Home Assistant y usar un contador de energía acumulada. Si Home Assistant devuelve estadísticas horarias, el reparto por punta, llano y valle es exacto; si solo hay total mensual, se reparte por la franja típica.
 
 ![Entidades de Home Assistant](docs/screenshots/entity-picker.png)
 

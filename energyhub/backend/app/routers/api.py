@@ -134,21 +134,24 @@ def _estimate_rows(
         db.scalars(select(Device).where(Device.enabled.is_(True)).order_by(Device.id)).all()
     )
     real_energy = energy_readings.readings_for_month(db, year, month)
-    rows = [
-        (
-            device,
-            estimation.estimate_device_hourly(
+    rows = []
+    for device in devices:
+        reading = real_energy.get(device.id)
+        rows.append(
+            (
                 device,
-                contract,
-                curve,
-                year,
-                month,
-                factor,
-                real_energy_kwh=real_energy.get(device.id),
-            ),
+                estimation.estimate_device_hourly(
+                    device,
+                    contract,
+                    curve,
+                    year,
+                    month,
+                    factor,
+                    real_energy_kwh=reading.energy_kwh if reading is not None else None,
+                    real_hourly=energy_readings.hourly_map(reading),
+                ),
+            )
         )
-        for device in devices
-    ]
     by_period = {"P1": 0.0, "P2": 0.0, "P3": 0.0}
     energy_by_hour: dict[datetime, float] = {}
     for _device, est in rows:
@@ -175,6 +178,7 @@ def _estimate_one(
     year: int,
     month: int,
     real_energy_kwh: float | None = None,
+    real_hourly: dict[datetime, float] | None = None,
 ) -> tuple[TariffPrice | None, prices.PriceCurve, estimation.DeviceEstimate, bool]:
     price, is_fallback = _price_for(db, contract, year, month)
     curve = (
@@ -182,8 +186,14 @@ def _estimate_one(
         if price is not None
         else prices.zero_month_curve(contract, year, month)
     )
-    if real_energy_kwh is None and device.id:
-        real_energy_kwh = energy_readings.reading_for_device(db, device.id, year, month)
+    reading = (
+        energy_readings.reading_for_device(db, device.id, year, month)
+        if real_energy_kwh is None and device.id
+        else None
+    )
+    if reading is not None:
+        real_energy_kwh = reading.energy_kwh
+        real_hourly = energy_readings.hourly_map(reading)
     est = estimation.estimate_device_hourly(
         device,
         contract,
@@ -192,6 +202,7 @@ def _estimate_one(
         month,
         tariff.calibration_factor(db, contract),
         real_energy_kwh=real_energy_kwh,
+        real_hourly=real_hourly,
     )
     return price, curve, est, is_fallback
 
@@ -255,6 +266,7 @@ def _device_summary(
         "entity_id": device.entity_id,
         "energy_entity_id": device.energy_entity_id,
         "energy_source": est.energy_source,
+        "energy_resolution": est.energy_resolution,
         "enabled": device.enabled,
         "notes": device.notes,
         "is_demo": device.is_demo,
@@ -819,6 +831,7 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
     year, month_number = _month(payload.month, contract)
     device = _device_from_payload(payload.device)
     real_energy = None
+    real_hourly = None
     energy_error: str | None = None
     if device.mode == "entity" and device.energy_entity_id:
         if ha_client.configured:
@@ -830,11 +843,23 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
                 month_number,
             )
             real_energy = result.energy_kwh
+            real_hourly = result.hourly
             energy_error = result.error
         else:
             energy_error = "Home Assistant no está conectado; no se puede leer la entidad de energía."
+    if device.id and real_energy is None:
+        stored = energy_readings.reading_for_device(db, device.id, year, month_number)
+        if stored is not None:
+            real_energy = stored.energy_kwh
+            real_hourly = energy_readings.hourly_map(stored)
     price, _curve, est, _fallback = _estimate_one(
-        db, contract, device, year, month_number, real_energy_kwh=real_energy
+        db,
+        contract,
+        device,
+        year,
+        month_number,
+        real_energy_kwh=real_energy,
+        real_hourly=real_hourly,
     )
     return {
         "energy_kwh": est.energy_kwh,
@@ -854,6 +879,7 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
         "price_source": price.source if price is not None else None,
         "currency": contract.currency,
         "energy_source": est.energy_source,
+        "energy_resolution": est.energy_resolution,
         "energy_entity_id": device.energy_entity_id,
         "energy_error": energy_error,
     }

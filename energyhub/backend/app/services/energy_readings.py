@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -32,6 +33,7 @@ class EnergyReadResult:
     end_value: float | None = None
     unit: str | None = None
     error: str | None = None
+    hourly: dict[datetime, float] | None = None
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -92,14 +94,15 @@ async def _reading_near(
     return after[0] if after else None
 
 
-async def _statistics_total(
+async def _statistics_data(
     client: HaClient,
     entity_id: str,
     start_local: datetime,
     end_local: datetime,
     now: datetime,
     factor: float,
-) -> float | None:
+    tz: ZoneInfo,
+) -> tuple[float, dict[datetime, float] | None] | None:
     get_statistics = getattr(client, "get_statistics", None)
     if get_statistics is None:
         return None
@@ -113,18 +116,34 @@ async def _statistics_total(
     if not rows:
         return None
     total = 0.0
+    hourly: dict[datetime, float] = {}
     has_change = False
     for row in rows:
         if not isinstance(row, dict) or row.get("change") is None:
             continue
         try:
-            total += float(row["change"])
-            has_change = True
+            change = float(row["change"])
         except (TypeError, ValueError):
             continue
+        total += change
+        has_change = True
+        raw_start = row.get("start")
+        if raw_start:
+            try:
+                moment = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            local_hour = moment.astimezone(tz).replace(minute=0, second=0, microsecond=0)
+            hourly[local_hour] = hourly.get(local_hour, 0.0) + change * factor
     if not has_change or total < 0:
         return None
-    return total * factor
+    total_kwh = total * factor
+    hourly_total = sum(hourly.values())
+    if not hourly or abs(hourly_total - total_kwh) > max(0.01, total_kwh * 0.01):
+        hourly = None
+    return total_kwh, hourly
 
 
 async def fetch_month_energy(
@@ -158,11 +177,16 @@ async def fetch_month_energy(
             error="La entidad parece una medición instantánea, no un contador acumulado.",
         )
 
-    statistics_energy = await _statistics_total(
-        client, entity_id, start_local, end_local, now, factor
+    statistics = await _statistics_data(
+        client, entity_id, start_local, end_local, now, factor, _contract_tz(contract)
     )
-    if statistics_energy is not None:
-        return EnergyReadResult(energy_kwh=statistics_energy, unit=str(unit))
+    if statistics is not None:
+        statistics_energy, hourly = statistics
+        return EnergyReadResult(
+            energy_kwh=statistics_energy,
+            unit=str(unit),
+            hourly=hourly,
+        )
 
     end_is_current = end_local.astimezone(timezone.utc) > now - timedelta(minutes=2)
     end_value = _numeric_state(state) if end_is_current else await _reading_near(client, entity_id, end_local)
@@ -214,22 +238,43 @@ async def cached_month_energy(
     return result
 
 
-def readings_for_month(db: Session, year: int, month: int) -> dict[int, float]:
+def readings_for_month(db: Session, year: int, month: int) -> dict[int, DeviceEnergyReading]:
     period_start = date(year, month, 1)
     rows = db.scalars(
         select(DeviceEnergyReading).where(DeviceEnergyReading.period_start == period_start)
     ).all()
-    return {row.device_id: row.energy_kwh for row in rows}
+    return {row.device_id: row for row in rows}
 
 
-def reading_for_device(db: Session, device_id: int, year: int, month: int) -> float | None:
-    row = db.scalars(
+def reading_for_device(
+    db: Session, device_id: int, year: int, month: int
+) -> DeviceEnergyReading | None:
+    return db.scalars(
         select(DeviceEnergyReading).where(
             DeviceEnergyReading.device_id == device_id,
             DeviceEnergyReading.period_start == date(year, month, 1),
         )
     ).first()
-    return row.energy_kwh if row is not None else None
+
+
+def hourly_map(reading: DeviceEnergyReading | None) -> dict[datetime, float]:
+    if reading is None or not reading.hourly_json:
+        return {}
+    try:
+        payload = json.loads(reading.hourly_json)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    result: dict[datetime, float] = {}
+    for raw, value in payload.items():
+        try:
+            moment = datetime.fromisoformat(str(raw))
+            energy = float(value)
+        except (TypeError, ValueError):
+            continue
+        result[moment] = energy
+    return result
 
 
 def _needs_refresh(
@@ -307,6 +352,14 @@ async def refresh_readings(
             existing.start_value = result.start_value
             existing.end_value = result.end_value
             existing.unit = result.unit
+            existing.hourly_json = (
+                json.dumps(
+                    {moment.isoformat(): value for moment, value in result.hourly.items()},
+                    ensure_ascii=False,
+                )
+                if result.hourly
+                else None
+            )
             existing.fetched_at = now
             updated += 1
         db.commit()

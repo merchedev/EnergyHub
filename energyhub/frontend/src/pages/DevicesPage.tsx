@@ -210,7 +210,11 @@ export function DevicesPage() {
                             </Badge>
                             {device.is_demo ? <Badge tone="blue">Demo</Badge> : null}
                             {device.energy_source === 'ha_energy_sensor' ? (
-                              <Badge tone="green">Consumo real HA</Badge>
+                              <Badge tone="green">
+                                {device.energy_resolution === 'hourly'
+                                  ? 'Consumo real horario'
+                                  : 'Consumo real mensual'}
+                              </Badge>
                             ) : device.energy_entity_id ? (
                               <Badge tone="yellow">HA sin lectura</Badge>
                             ) : device.entity_id ? (

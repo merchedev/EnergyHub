@@ -233,6 +233,7 @@ export interface Device {
   entity_id: string | null
   energy_entity_id: string | null
   energy_source: 'ha_energy_sensor' | 'estimated'
+  energy_resolution: 'hourly' | 'monthly' | 'estimated'
   enabled: boolean
   notes: string | null
   is_demo: boolean
@@ -291,6 +292,7 @@ export interface DevicePreview {
   price_source: string | null
   currency: string
   energy_source: 'ha_energy_sensor' | 'estimated'
+  energy_resolution: 'hourly' | 'monthly' | 'estimated'
   energy_entity_id: string | null
   energy_error: string | null
 }
