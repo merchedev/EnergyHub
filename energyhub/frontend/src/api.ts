@@ -9,6 +9,7 @@ import type {
   Device,
   DeviceInput,
   DevicePreview,
+  HaArea,
   HaEntity,
   HaStatus,
   PriceCurve,
@@ -143,6 +144,7 @@ export const api = {
     request<{ items: Calibration[]; factor: number }>('/calibrations'),
   haStatus: () => request<HaStatus>('/ha/status'),
   haEntities: (kind = 'all') => request<{ configured: boolean; items: HaEntity[] }>(`/ha/entities?kind=${kind}`),
+  haAreas: () => request<{ configured: boolean; items: HaArea[] }>('/ha/areas'),
   settings: () =>
     request<{ esios_entity_id: string; language: string; theme: string; demo_mode: boolean }>('/settings'),
   updateSettings: (payload: { esios_entity_id?: string | null; language?: string; theme?: string }) =>

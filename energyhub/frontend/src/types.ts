@@ -499,6 +499,13 @@ export interface HaEntity {
   state_class: string | null
 }
 
+export interface HaArea {
+  id: string
+  name: string
+  icon: string | null
+  floor_id: string | null
+}
+
 export interface HaStatus {
   configured: boolean
   connected: boolean

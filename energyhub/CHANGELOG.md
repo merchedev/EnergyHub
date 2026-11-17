@@ -8,7 +8,10 @@
 - Un precio manual del mes consultado tiene prioridad sobre los precios de Pepe de un mes anterior, para que el aviso de precio provisional desaparezca al confirmar el mes actual.
 - Nueva vista **Consumo** por dispositivo: gráfico de 24 horas, perfil del mes y detalle por día.
 - La vista indica el tramo tarifario (valle, llano o punta) con más consumo, la hora y el día de mayor uso.
-- Tests con el formato real de `recorder/statistics_during_period`, de prioridad de precios manuales y del perfil horario.
+- En el modo **Entidad de HA**, potencia, horas y standby se mueven a unos ajustes de respaldo plegados, con la fórmula y una explicación de cuándo se usan.
+- La zona del dispositivo se elige entre las áreas existentes en Home Assistant; ya no es texto libre.
+- Nuevo endpoint `GET /api/ha/areas` para leer el registro de áreas de Home Assistant.
+- Tests con el formato real de `recorder/statistics_during_period`, de prioridad de precios manuales, del perfil horario y del registro de áreas.
 
 ## 0.3.4
 2026-11-17

@@ -21,6 +21,8 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 - Dispositivos sin sensores: siempre enchufado, horas al día, ciclos o entidad de HA.
 - Buscador de entidades de Home Assistant para dispositivos y sensores ESIOS.
 - Consumo real de dispositivos desde entidades de energía acumulada (kWh/Wh), con reparto horario exacto cuando Home Assistant expone estadísticas por hora.
+- Zona del dispositivo elegida entre las áreas existentes en Home Assistant.
+- En el modo entidad, potencia, horas y standby quedan plegados como ajustes de respaldo.
 - Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
 - Factura estimada, proyección y calibración con la factura real.
 - Comparador Pepe vs PVPC con el mismo consumo y potencia.

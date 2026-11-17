@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Github,
   Info,
@@ -34,7 +36,16 @@ import {
   pct,
   watts,
 } from '../lib/format'
-import type { CatalogItem, Device, DeviceInput, DeviceMode, DevicePreview, HaEntity, Window } from '../types'
+import type {
+  CatalogItem,
+  Device,
+  DeviceInput,
+  DeviceMode,
+  DevicePreview,
+  HaArea,
+  HaEntity,
+  Window,
+} from '../types'
 
 function fromDevice(device: Device): DeviceInput {
   return {
@@ -135,6 +146,10 @@ export function DeviceForm({
   const [entities, setEntities] = useState<HaEntity[]>([])
   const [energyEntities, setEnergyEntities] = useState<HaEntity[]>([])
   const [entitiesConfigured, setEntitiesConfigured] = useState(false)
+  const [areas, setAreas] = useState<HaArea[]>([])
+  const [areasConfigured, setAreasConfigured] = useState(false)
+  const [areasLoading, setAreasLoading] = useState(false)
+  const [showFallback, setShowFallback] = useState(false)
 
   const selectedCatalog = useMemo(
     () => catalog.find((item) => item.id === form.category) ?? catalog.find((item) => item.id === 'other'),
@@ -146,12 +161,28 @@ export function DeviceForm({
   const selectedEnergyEntity = energyEntities.find(
     (entity) => entity.entity_id === form.energy_entity_id,
   )
+  const areaNames = useMemo(() => new Set(areas.map((area) => area.name)), [areas])
+  const legacyArea = form.area && !areaNames.has(form.area) ? form.area : null
+  const areaHint = areasLoading
+    ? 'Cargando zonas de Home Assistant…'
+    : !areasConfigured
+      ? 'Conecta Home Assistant para poder elegir una zona.'
+      : areas.length === 0
+        ? 'Home Assistant no tiene zonas definidas.'
+        : 'Habitación de Home Assistant.'
+  const zoneHint =
+    areasLoading || !areasConfigured
+      ? areaHint
+      : legacyArea
+        ? 'La zona actual no existe en Home Assistant. Elige una de la lista para actualizarla.'
+        : areaHint
 
   useEffect(() => {
     if (!open) return
     setError(null)
     setPreview(null)
     setPreviewError(null)
+    setShowFallback(false)
     if (device) {
       setForm(fromDevice(device))
     } else {
@@ -159,6 +190,30 @@ export function DeviceForm({
       setForm(item ? fromCatalog(item) : EMPTY)
     }
   }, [open, device, initialCategory, catalog])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setAreasLoading(true)
+    api
+      .haAreas()
+      .then((result) => {
+        if (cancelled) return
+        setAreas(result.items)
+        setAreasConfigured(result.configured)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setAreas([])
+        setAreasConfigured(false)
+      })
+      .finally(() => {
+        if (!cancelled) setAreasLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open || form.mode !== 'entity') return
@@ -305,12 +360,26 @@ export function DeviceForm({
                 placeholder="Nevera, lavadora, TV…"
               />
             </Field>
-            <Field label="Zona" hint="Opcional: cocina, salón, lavadero…">
-              <Input
-                value={form.area ?? ''}
-                onChange={(event) => update('area', event.target.value)}
-                placeholder="Cocina"
-              />
+            <Field label="Zona" hint={zoneHint}>
+              {areasLoading ? (
+                <Select disabled value="">
+                  <option>Cargando zonas…</option>
+                </Select>
+              ) : (
+                <Select
+                  value={form.area ?? ''}
+                  onChange={(event) => update('area', event.target.value)}
+                  disabled={!areasConfigured || areas.length === 0}
+                >
+                  <option value="">Sin zona</option>
+                  {areas.map((area) => (
+                    <option value={area.name} key={area.id}>
+                      {area.name}
+                    </option>
+                  ))}
+                  {legacyArea ? <option value={legacyArea}>{legacyArea} (no está en HA)</option> : null}
+                </Select>
+              )}
             </Field>
           </div>
 
@@ -555,7 +624,7 @@ export function DeviceForm({
               {!entitiesConfigured ? (
                 <div className="banner warning">
                   Home Assistant no está conectado. Puedes guardar la entidad cuando lo esté; mientras
-                  tanto, usa una estimación por horas.
+                  tanto se usará la estimación de respaldo del aparato.
                 </div>
               ) : null}
               <div className="banner accent">
@@ -612,45 +681,96 @@ export function DeviceForm({
                   hint="Entidades de control o binarias de Home Assistant"
                 />
               </Field>
-              <div className="form-grid">
-                <Field label="Potencia activa (W)">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.power_active_w}
-                    onChange={(event) => update('power_active_w', Number(event.target.value))}
-                  />
-                </Field>
-                <Field label="Horas al día de respaldo" hint="Se usa si aún no hay historial.">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="24"
-                    step="0.1"
-                    value={form.hours_per_day}
-                    onChange={(event) => update('hours_per_day', Number(event.target.value))}
-                  />
-                </Field>
-                <Field label="Standby (W)">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.power_standby_w}
-                    onChange={(event) => update('power_standby_w', Number(event.target.value))}
-                  />
-                </Field>
-                <Field label="Flexibilidad">
-                  <Select
-                    value={form.flexibility}
-                    onChange={(event) => update('flexibility', event.target.value as DeviceInput['flexibility'])}
+              <Field label="Flexibilidad" hint="Para recomendar el mejor horario.">
+                <Select
+                  value={form.flexibility}
+                  onChange={(event) => update('flexibility', event.target.value as DeviceInput['flexibility'])}
+                >
+                  <option value="flexible">Flexible</option>
+                  <option value="semi">Semi-flexible</option>
+                  <option value="none">No flexible</option>
+                </Select>
+              </Field>
+              <div
+                style={{
+                  display: 'grid',
+                  gap: 10,
+                  padding: 12,
+                  border: '1px dashed var(--border)',
+                  borderRadius: 12,
+                  background: 'var(--bg-soft)',
+                }}
+              >
+                <div className="between" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 650 }}>Ajustes de respaldo</div>
+                    <div className="field-hint">
+                      Solo se usan si la entidad de energía no devuelve una lectura para el mes.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowFallback((value) => !value)}
+                    aria-expanded={showFallback}
                   >
-                    <option value="flexible">Flexible</option>
-                    <option value="semi">Semi-flexible</option>
-                    <option value="none">No flexible</option>
-                  </Select>
-                </Field>
+                    {showFallback ? 'Ocultar' : 'Ver'}{' '}
+                    {showFallback ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </Button>
+                </div>
+                {showFallback ? (
+                  <>
+                    <div className="form-grid">
+                      <Field
+                        label="Potencia activa (W)"
+                        hint="Se multiplica por las horas al día para estimar el consumo si no hay lectura."
+                      >
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={form.power_active_w}
+                          onChange={(event) => update('power_active_w', Number(event.target.value))}
+                        />
+                      </Field>
+                      <Field
+                        label="Horas al día de respaldo"
+                        hint="Horas de uso diario que se suponen cuando no hay lectura."
+                      >
+                        <Input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.1"
+                          value={form.hours_per_day}
+                          onChange={(event) => update('hours_per_day', Number(event.target.value))}
+                        />
+                      </Field>
+                      <Field
+                        label="Standby (W)"
+                        hint="Consumo en reposo. Se añade a las horas en que no está en uso."
+                      >
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={form.power_standby_w}
+                          onChange={(event) => update('power_standby_w', Number(event.target.value))}
+                        />
+                      </Field>
+                    </div>
+                    <Toggle
+                      checked={form.always_plugged}
+                      onChange={(value) => update('always_plugged', value)}
+                      label="Está siempre enchufado"
+                      hint="Necesario para sumar el standby de las horas sin uso."
+                    />
+                    <div className="small muted">
+                      Respaldo diario = potencia activa × horas al día + standby × (24 − horas al día).
+                    </div>
+                  </>
+                ) : null}
               </div>
             </>
           ) : null}
@@ -685,7 +805,7 @@ export function DeviceForm({
                 {form.mode === 'entity'
                   ? form.energy_entity_id
                     ? 'Consumo desde Home Assistant'
-                    : 'Estimación de respaldo con horas al día'
+                    : 'Estimación de respaldo del aparato'
                   : `Estimación de ${modeLabel(form.mode).toLowerCase()}`}
               </div>
             </div>
@@ -723,7 +843,7 @@ export function DeviceForm({
                   <span>
                     No se ha podido usar la entidad de energía
                     {preview.energy_error ? `: ${preview.energy_error}` : '.'} Se usará la estimación
-                    manual como respaldo.
+                    de respaldo del aparato; puedes ajustarla en «Ajustes de respaldo».
                   </span>
                 </div>
               ) : null}

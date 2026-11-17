@@ -74,21 +74,9 @@ class HaClient:
         path = parsed.path.rstrip("/")
         return f"{scheme}://{parsed.netloc}{path}/websocket"
 
-    async def get_statistics(
-        self,
-        entity_id: str,
-        start: datetime,
-        end: datetime,
-        period: str = "hour",
-    ) -> list[dict]:
+    async def _ws_command(self, payload: dict, *, error_context: str) -> Any:
         if not self.configured:
             raise HaNotConfigured("Home Assistant no está configurado")
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
-        if end <= start:
-            return []
         request_id = 1
         try:
             async with websocket_connect(self.websocket_url, open_timeout=10, close_timeout=5) as ws:
@@ -100,19 +88,7 @@ class HaClient:
                     auth = hello
                 if auth.get("type") != "auth_ok":
                     raise HaError("Home Assistant ha rechazado la autenticación WebSocket")
-                await ws.send(
-                    json.dumps(
-                        {
-                            "id": request_id,
-                            "type": "recorder/statistics_during_period",
-                            "start_time": start.isoformat(),
-                            "end_time": end.isoformat(),
-                            "statistic_ids": [entity_id],
-                            "period": period,
-                            "types": ["change"],
-                        }
-                    )
-                )
+                await ws.send(json.dumps({"id": request_id, **payload}))
                 while True:
                     message = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
                     if message.get("id") != request_id:
@@ -120,15 +96,66 @@ class HaClient:
                     if not message.get("success"):
                         error = message.get("error") or {}
                         raise HaError(
-                            f"Home Assistant no ha devuelto estadísticas: {error.get('message', 'error desconocido')}"
+                            f"{error_context}: {error.get('message', 'error desconocido')}"
                         )
-                    result = message.get("result") or {}
-                    rows = result.get(entity_id) if isinstance(result, dict) else None
-                    return rows if isinstance(rows, list) else []
+                    return message.get("result")
         except HaError:
             raise
         except Exception as exc:
-            raise HaError(f"Error consultando estadísticas de Home Assistant: {exc}") from exc
+            raise HaError(f"Error consultando Home Assistant: {exc}") from exc
+
+    async def get_statistics(
+        self,
+        entity_id: str,
+        start: datetime,
+        end: datetime,
+        period: str = "hour",
+    ) -> list[dict]:
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end <= start:
+            return []
+        result = await self._ws_command(
+            {
+                "type": "recorder/statistics_during_period",
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "statistic_ids": [entity_id],
+                "period": period,
+                "types": ["change"],
+            },
+            error_context="Home Assistant no ha devuelto estadísticas",
+        )
+        rows = result.get(entity_id) if isinstance(result, dict) else None
+        return rows if isinstance(rows, list) else []
+
+    async def get_areas(self) -> list[dict]:
+        result = await self._ws_command(
+            {"type": "config/area_registry/list"},
+            error_context="Home Assistant no ha devuelto las zonas",
+        )
+        if not isinstance(result, list):
+            return []
+        areas: list[dict] = []
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            area_id = str(item.get("area_id") or "").strip()
+            name = str(item.get("name") or "").strip()
+            if not area_id or not name:
+                continue
+            areas.append(
+                {
+                    "id": area_id,
+                    "name": name,
+                    "icon": item.get("icon"),
+                    "floor_id": item.get("floor_id"),
+                }
+            )
+        areas.sort(key=lambda area: area["name"].casefold())
+        return areas
 
     async def _get(self, path: str, params: dict | None = None) -> Any:
         if not self.configured:

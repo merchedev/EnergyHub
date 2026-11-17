@@ -1413,6 +1413,17 @@ async def ha_entities(kind: str = Query(default="all")) -> dict:
     return {"configured": True, "items": items}
 
 
+@router.get("/ha/areas")
+async def ha_areas() -> dict:
+    if not ha_client.configured:
+        return {"configured": False, "items": []}
+    try:
+        items = await ha_client.get_areas()
+    except ha.HaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"configured": True, "items": items}
+
+
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db)) -> dict:
     return {
