@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.7
+2026-11-17
+
+- Nueva tarjeta **Ahorro por horario**: coste real frente a usar todo el consumo en punta, llano o valle.
+- Ahorro conseguido frente a punta, porcentaje de energía en valle y porcentaje del ahorro máximo aprovechado.
+- Ahorro potencial de los aparatos flexibles y semi-flexibles, con detalle por dispositivo y en el total del mes.
+- Comparación con y sin IVA e impuesto eléctrico.
+- Ajustes: porcentaje de consumo flexible y semi-flexible que se supone movible a valle; se usa también en las recomendaciones.
+- Nuevo servicio de comparación y tests del cálculo, de los totales y de los ajustes.
+
 ## 0.3.6
 2026-11-17
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -38,6 +39,7 @@ from ..schemas import (
 )
 from ..services import (
     changelog,
+    comparison,
     demo,
     energy_readings,
     estimation,
@@ -73,6 +75,20 @@ def _set_setting(db: Session, key: str, value: str) -> None:
         db.add(Setting(key=key, value=value))
     else:
         item.value = value
+
+
+def _get_float_setting(db: Session, key: str, default: float) -> float:
+    try:
+        return float(_get_setting(db, key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _shift_factors(db: Session) -> tuple[float, float]:
+    return (
+        max(0.0, min(100.0, _get_float_setting(db, "shift_flexible_pct", 70.0))),
+        max(0.0, min(100.0, _get_float_setting(db, "shift_semi_pct", 30.0))),
+    )
 
 
 def _month(value: str | None, contract: Contract) -> tuple[int, int]:
@@ -249,6 +265,7 @@ def _device_summary(
     price: TariffPrice | None,
     total_cost: float,
     total_energy: float,
+    comparison_payload: dict | None = None,
 ) -> dict:
     share = (est.cost_eur / total_cost * 100.0) if total_cost > 0 else (
         (est.energy_kwh / total_energy * 100.0) if total_energy > 0 else 0.0
@@ -290,6 +307,7 @@ def _device_summary(
         "cost_by_period": est.cost_by_period,
         "periods": est.period_rows(price),
         "notes_estimate": est.notes,
+        "comparison": comparison_payload,
     }
 
 
@@ -818,9 +836,31 @@ async def list_devices(
     rows, factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     total_cost = sum(est.cost_eur for _device, est in rows)
     total_energy = sum(est.energy_kwh for _device, est in rows)
-    items = [
-        _device_summary(device, est, price, total_cost, total_energy) for device, est in rows
+    shift_flexible, shift_semi = _shift_factors(db)
+    comparisons = [
+        comparison.device_comparison(
+            device,
+            est,
+            price,
+            contract,
+            shift_flexible_pct=shift_flexible,
+            shift_semi_pct=shift_semi,
+            price_is_fallback=_fallback,
+        )
+        for device, est in rows
     ]
+    items = [
+        _device_summary(
+            device,
+            est,
+            price,
+            total_cost,
+            total_energy,
+            comparison_payload=asdict(comp) if comp is not None else None,
+        )
+        for (device, est), comp in zip(rows, comparisons, strict=True)
+    ]
+    total_comparison = comparison.aggregate_comparisons(comparisons)
     return {
         "items": items,
         "summary": {
@@ -829,6 +869,7 @@ async def list_devices(
             "count": len(items),
             "calibration_factor": factor,
             "price": tariff.price_to_dict(price, year, month_number, _fallback),
+            "comparison": asdict(total_comparison) if total_comparison is not None else None,
         },
     }
 
@@ -869,6 +910,16 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
         real_energy_kwh=real_energy,
         real_hourly=real_hourly,
     )
+    shift_flexible, shift_semi = _shift_factors(db)
+    comp = comparison.device_comparison(
+        device,
+        est,
+        price,
+        contract,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
+        price_is_fallback=_fallback,
+    )
     return {
         "energy_kwh": est.energy_kwh,
         "active_kwh": est.active_kwh,
@@ -890,6 +941,7 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
         "energy_resolution": est.energy_resolution,
         "energy_entity_id": device.energy_entity_id,
         "energy_error": energy_error,
+        "comparison": asdict(comp) if comp is not None else None,
     }
 
 
@@ -971,6 +1023,16 @@ async def device_hourly(
         day[point.period] += energy
 
     total_energy = sum(row["energy_kwh"] for row in profile)
+    shift_flexible, shift_semi = _shift_factors(db)
+    comp = comparison.device_comparison(
+        device,
+        est,
+        price,
+        contract,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
+        price_is_fallback=is_fallback,
+    )
     period_rows = est.period_rows(price)
     for row in period_rows:
         row["share"] = round((row["energy_kwh"] / total_energy * 100.0) if total_energy > 0 else 0.0, 2)
@@ -1017,6 +1079,7 @@ async def device_hourly(
         ),
         "notes": est.notes,
         "typical_windows": estimation.device_windows(device),
+        "comparison": asdict(comp) if comp is not None else None,
     }
 
 
@@ -1030,7 +1093,26 @@ def create_device(payload: DeviceIn, db: Session = Depends(get_db)) -> dict:
     db.refresh(device)
     year, month_number = _month(None, contract)
     price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
-    return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
+    shift_flexible, shift_semi = _shift_factors(db)
+    comp = comparison.device_comparison(
+        device,
+        est,
+        price,
+        contract,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
+        price_is_fallback=_fallback,
+    )
+    return {
+        "device": _device_summary(
+            device,
+            est,
+            price,
+            est.cost_eur,
+            est.energy_kwh,
+            comparison_payload=asdict(comp) if comp is not None else None,
+        )
+    }
 
 
 @router.put("/devices/{device_id}")
@@ -1044,7 +1126,26 @@ def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_d
     db.refresh(device)
     year, month_number = _month(None, contract)
     price, _curve, est, _fallback = _estimate_one(db, contract, device, year, month_number)
-    return {"device": _device_summary(device, est, price, est.cost_eur, est.energy_kwh)}
+    shift_flexible, shift_semi = _shift_factors(db)
+    comp = comparison.device_comparison(
+        device,
+        est,
+        price,
+        contract,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
+        price_is_fallback=_fallback,
+    )
+    return {
+        "device": _device_summary(
+            device,
+            est,
+            price,
+            est.cost_eur,
+            est.energy_kwh,
+            comparison_payload=asdict(comp) if comp is not None else None,
+        )
+    }
 
 
 @router.delete("/devices/{device_id}")
@@ -1070,10 +1171,32 @@ async def dashboard(
     rows, factor, by_period, bill, curve = _estimate_rows(db, contract, price, year, month_number)
     total_cost = sum(est.cost_eur for _device, est in rows)
     total_energy = sum(est.energy_kwh for _device, est in rows)
+    shift_flexible, shift_semi = _shift_factors(db)
+    comparisons = [
+        comparison.device_comparison(
+            device,
+            est,
+            price,
+            contract,
+            shift_flexible_pct=shift_flexible,
+            shift_semi_pct=shift_semi,
+            price_is_fallback=is_fallback,
+        )
+        for device, est in rows
+    ]
     items = [
-        _device_summary(device, est, price, total_cost, total_energy) for device, est in rows
+        _device_summary(
+            device,
+            est,
+            price,
+            total_cost,
+            total_energy,
+            comparison_payload=asdict(comp) if comp is not None else None,
+        )
+        for (device, est), comp in zip(rows, comparisons, strict=True)
     ]
     items.sort(key=lambda item: (item["cost"], item["energy_kwh"]), reverse=True)
+    total_comparison = comparison.aggregate_comparisons(comparisons)
     calibration = tariff.get_latest_calibration(db, contract)
     active_recs = recommendations.generate_recommendations(
         db,
@@ -1084,6 +1207,8 @@ async def dashboard(
         month_number,
         rows,
         calibration,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
         ha_configured=ha_client.configured,
     )
     try:
@@ -1183,6 +1308,7 @@ async def dashboard(
         "price_mode": "hourly" if profile.get("price_source") == "ree_pvpc" else "period",
         "totals": totals,
         "by_period": period_rows,
+        "comparison": asdict(total_comparison) if total_comparison is not None else None,
         "devices": items,
         "top_devices": items[:5],
         "next_cheap_windows": cheap,
@@ -1212,6 +1338,7 @@ async def list_recommendations(db: Session = Depends(get_db)) -> dict:
     price, is_fallback = _price_for(db, contract, year, month_number)
     rows, _factor, _by_period, _bill, _curve = _estimate_rows(db, contract, price, year, month_number)
     calibration = tariff.get_latest_calibration(db, contract)
+    shift_flexible, shift_semi = _shift_factors(db)
     recs = recommendations.generate_recommendations(
         db,
         contract,
@@ -1221,6 +1348,8 @@ async def list_recommendations(db: Session = Depends(get_db)) -> dict:
         month_number,
         rows,
         calibration,
+        shift_flexible_pct=shift_flexible,
+        shift_semi_pct=shift_semi,
         ha_configured=ha_client.configured,
     )
     devices = {device.id: device for device, _est in rows}
@@ -1431,6 +1560,8 @@ def get_settings(db: Session = Depends(get_db)) -> dict:
         "language": _get_setting(db, "language", "es"),
         "theme": _get_setting(db, "theme", "system"),
         "demo_mode": _get_setting(db, "demo_mode", "0") == "1",
+        "shift_flexible_pct": _get_float_setting(db, "shift_flexible_pct", 70.0),
+        "shift_semi_pct": _get_float_setting(db, "shift_semi_pct", 30.0),
     }
 
 
@@ -1442,6 +1573,8 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
             _set_setting(db, key, value or "")
         elif key in {"language", "theme"} and value:
             _set_setting(db, key, value)
+        elif key in {"shift_flexible_pct", "shift_semi_pct"} and value is not None:
+            _set_setting(db, key, str(max(0.0, min(100.0, float(value)))))
     db.commit()
     return get_settings(db)
 

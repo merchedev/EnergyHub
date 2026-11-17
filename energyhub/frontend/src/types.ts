@@ -11,6 +11,37 @@ export interface Window {
   weight: number
 }
 
+export interface CostComparison {
+  actual_cost_eur: number
+  all_p1_cost_eur: number
+  all_p2_cost_eur: number
+  all_p3_cost_eur: number
+  savings_vs_p1_eur: number
+  savings_vs_p2_eur: number
+  max_saving_to_p3_eur: number
+  actual_cost_with_taxes_eur: number
+  all_p1_cost_with_taxes_eur: number
+  all_p2_cost_with_taxes_eur: number
+  all_p3_cost_with_taxes_eur: number
+  savings_vs_p1_with_taxes_eur: number
+  savings_vs_p2_with_taxes_eur: number
+  max_saving_to_p3_with_taxes_eur: number
+  energy_kwh: number
+  by_period: Record<PeriodId, number>
+  valle_share: number
+  savings_captured_pct: number
+  shiftable_energy_kwh: number
+  shiftable_saving_eur: number
+  shiftable_saving_with_taxes_eur: number
+  shift_factor: number
+  is_flexible: boolean
+  is_always_on: boolean
+  has_period_difference: boolean
+  price_mode: 'period' | 'hourly'
+  price_is_fallback: boolean
+  note: string | null
+}
+
 export interface Contract {
   id: number
   name: string
@@ -249,6 +280,7 @@ export interface Device {
   cost_by_period: Record<PeriodId, number>
   periods: Array<{ id: PeriodId; name: string; price: number; energy_kwh: number; cost_eur: number }>
   notes_estimate: string[]
+  comparison: CostComparison | null
 }
 
 export interface DeviceInput {
@@ -295,6 +327,7 @@ export interface DevicePreview {
   energy_resolution: 'hourly' | 'monthly' | 'estimated'
   energy_entity_id: string | null
   energy_error: string | null
+  comparison: CostComparison | null
 }
 
 export interface DeviceHourlyHour {
@@ -356,6 +389,7 @@ export interface DeviceHourlyResponse {
   top_day: { date: string; energy_kwh: number; cost_eur: number } | null
   notes: string[]
   typical_windows: Window[]
+  comparison: CostComparison | null
 }
 
 export interface DeviceSummary {
@@ -364,6 +398,7 @@ export interface DeviceSummary {
   count: number
   calibration_factor: number
   price: PriceInfo | null
+  comparison: CostComparison | null
 }
 
 export interface Totals {
@@ -406,6 +441,7 @@ export interface Dashboard {
   price: PriceInfo | null
   totals: Totals
   by_period: Array<{ id: PeriodId; name: string; energy_kwh: number; cost: number; price: number }>
+  comparison: CostComparison | null
   devices: Device[]
   top_devices: Device[]
   next_cheap_windows: CheapWindow[]

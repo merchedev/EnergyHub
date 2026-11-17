@@ -37,6 +37,7 @@ import {
   PeriodLegend,
   Progress,
   QualityRing,
+  Segmented,
   Stat,
 } from '../components/ui'
 import { useApi } from '../hooks/useApi'
@@ -52,9 +53,12 @@ import {
 } from '../lib/format'
 import type { Dashboard, PeriodId, Recommendation } from '../types'
 
+type TaxMode = 'net' | 'gross'
+
 export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> }) {
   const navigate = useNavigate()
   const [month, setMonth] = useState(monthInputValue())
+  const [taxMode, setTaxMode] = useState<TaxMode>('net')
   const { data, loading, error, reload } = useApi<Dashboard>(`/dashboard?month=${month}`)
   const { data: recsData } = useApi<{ items: Recommendation[] }>('/recommendations')
 
@@ -86,6 +90,41 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
   const averagePrice = data.totals.energy_kwh > 0 ? data.totals.variable_cost / data.totals.energy_kwh : 0
   const fakePrice = needsPrice
   const recs = recsData?.items?.slice(0, 2) ?? []
+  const comparison = data.comparison
+  const showTaxes = taxMode === 'gross'
+  const comparisonValues = comparison
+    ? {
+        actual: showTaxes ? comparison.actual_cost_with_taxes_eur : comparison.actual_cost_eur,
+        p1: showTaxes ? comparison.all_p1_cost_with_taxes_eur : comparison.all_p1_cost_eur,
+        p2: showTaxes ? comparison.all_p2_cost_with_taxes_eur : comparison.all_p2_cost_eur,
+        p3: showTaxes ? comparison.all_p3_cost_with_taxes_eur : comparison.all_p3_cost_eur,
+        savings: showTaxes ? comparison.savings_vs_p1_with_taxes_eur : comparison.savings_vs_p1_eur,
+        savingsP2: showTaxes
+          ? comparison.savings_vs_p2_with_taxes_eur
+          : comparison.savings_vs_p2_eur,
+        potential: showTaxes
+          ? comparison.shiftable_saving_with_taxes_eur
+          : comparison.shiftable_saving_eur,
+      }
+    : null
+  const potentialDevices = [...(data.devices ?? [])]
+    .filter((device) => (device.comparison?.shiftable_saving_eur ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (b.comparison?.shiftable_saving_eur ?? 0) - (a.comparison?.shiftable_saving_eur ?? 0),
+    )
+    .slice(0, 3)
+  const allValleDevices = (data.devices ?? []).filter(
+    (device) => (device.comparison?.valle_share ?? 0) >= 99.9,
+  )
+  const comparisonChart = comparisonValues
+    ? [
+        { name: 'Real', cost: comparisonValues.actual, color: 'var(--blue)' },
+        { name: 'Punta', cost: comparisonValues.p1, color: PERIOD_COLORS.P1 },
+        { name: 'Llano', cost: comparisonValues.p2, color: PERIOD_COLORS.P2 },
+        { name: 'Valle', cost: comparisonValues.p3, color: PERIOD_COLORS.P3 },
+      ]
+    : []
 
   const refresh = async () => {
     await reload()
@@ -418,6 +457,214 @@ export function DashboardPage({ onChanged }: { onChanged: () => Promise<void> })
               ) : null}
             </div>
           </Card>
+
+          {comparison && comparison.has_period_difference && comparisonValues ? (
+            <Card className="span-12">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Ahorro por horario</h2>
+                  <p className="card-subtitle">
+                    Mismo consumo, distinto tramo. El potencial solo cuenta los aparatos flexibles.
+                  </p>
+                </div>
+                <div className="flex gap-8" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Badge tone={comparison.valle_share >= 50 ? 'green' : 'neutral'}>
+                    {pct(comparison.valle_share, 0)} en valle
+                  </Badge>
+                  <Segmented
+                    value={taxMode}
+                    onChange={setTaxMode}
+                    options={[
+                      { value: 'net', label: 'Sin impuestos' },
+                      { value: 'gross', label: 'Con impuestos' },
+                    ]}
+                    columns={2}
+                  />
+                </div>
+              </div>
+              <div className="card-body">
+                <div className="stat-grid">
+                  <Stat
+                    label="Coste real"
+                    value={eur(comparisonValues.actual)}
+                    meta={showTaxes ? 'Energía con impuestos' : 'Energía, sin fijos'}
+                  />
+                  <Stat
+                    label="Todo en punta"
+                    value={eur(comparisonValues.p1)}
+                    meta="Si todo el consumo fuera punta"
+                  />
+                  <Stat
+                    label="Todo en llano"
+                    value={eur(comparisonValues.p2)}
+                    meta="Si todo el consumo fuera llano"
+                  />
+                  <Stat
+                    label="Todo en valle"
+                    value={eur(comparisonValues.p3)}
+                    meta="Mínimo teórico"
+                  />
+                </div>
+
+                <div className="card-grid mt-16">
+                  <div className="span-7">
+                    <div
+                      className="between"
+                      style={{ alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}
+                    >
+                      <div>
+                        <div className="big-number" style={{ fontSize: 34 }}>
+                          {eur(comparisonValues.savings)}
+                        </div>
+                        <div className="small muted">ahorro frente a punta</div>
+                      </div>
+                      <div className="right">
+                        <div className="device-cost">{pct(comparison.savings_captured_pct, 0)}</div>
+                        <div className="device-kwh">del ahorro posible</div>
+                      </div>
+                    </div>
+                    <Progress value={comparison.savings_captured_pct} />
+                    <div className="small muted mt-8">
+                      Has aprovechado el {pct(comparison.savings_captured_pct, 0)} del ahorro máximo
+                      frente a punta.
+                    </div>
+                    <div className="small muted mt-8">
+                      {comparisonValues.savingsP2 >= 0
+                        ? `También has ahorrado ${eur(comparisonValues.savingsP2)} frente a llano.`
+                        : `Aún pagas ${eur(Math.abs(comparisonValues.savingsP2))} más que si todo el consumo fuera llano.`}
+                    </div>
+                    <div className="small muted mt-8">
+                      {showTaxes
+                        ? 'Importes con impuestos estimados; no incluyen fijos ni bono social.'
+                        : 'Importes de energía; los fijos e impuestos se muestran aparte.'}
+                    </div>
+                  </div>
+                  <div className="span-5">
+                    <div className="chart-box" style={{ height: 190 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={comparisonChart}
+                          layout="vertical"
+                          margin={{ top: 0, right: 8, bottom: 0, left: 0 }}
+                        >
+                          <CartesianGrid stroke="var(--border)" horizontal={false} />
+                          <XAxis
+                            type="number"
+                            tickFormatter={(value) => `${Number(value).toFixed(0)} €`}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            width={48}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <Tooltip
+                            formatter={(value) => [eur(Number(value)), 'Coste']}
+                            contentStyle={{
+                              background: 'var(--surface-3)',
+                              border: '1px solid var(--border-strong)',
+                              borderRadius: 10,
+                              fontSize: 11,
+                              color: 'var(--text)',
+                            }}
+                          />
+                          <Bar dataKey="cost" radius={[0, 4, 4, 0]} barSize={12}>
+                            {comparisonChart.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card-grid mt-16">
+                  <div className="span-7">
+                    <div className="between">
+                      <div>
+                        <div className="small muted">Ahorro potencial en flexibles</div>
+                        <div className="big-number" style={{ fontSize: 28 }}>
+                          {eur(comparisonValues.potential)}
+                        </div>
+                      </div>
+                      <Badge tone={comparisonValues.potential > 0 ? 'yellow' : 'green'}>
+                        {comparisonValues.potential > 0 ? 'Margen de mejora' : 'Sin margen'}
+                      </Badge>
+                    </div>
+                    <div className="small muted mt-8">
+                      Moviendo a valle el porcentaje configurado de lo que usas en punta/llano. Se
+                      ajusta en Ajustes.
+                    </div>
+                    {potentialDevices.length > 0 ? (
+                      <div className="device-list mt-12">
+                        {potentialDevices.map((device) => (
+                          <div className="device-row" key={device.id}>
+                            <div className="device-icon">
+                              <DeviceIcon name={device.icon} />
+                            </div>
+                            <div className="device-main">
+                              <div className="device-name">{device.name}</div>
+                              <div className="device-meta">
+                                {pct(device.comparison?.valle_share ?? 0, 0)} en valle ·{' '}
+                                {device.flexibility === 'flexible' ? 'Flexible' : 'Semi-flexible'}
+                              </div>
+                            </div>
+                            <div className="device-numbers">
+                              <div className="device-cost">
+                                {eur(
+                                  showTaxes
+                                    ? device.comparison?.shiftable_saving_with_taxes_eur
+                                    : device.comparison?.shiftable_saving_eur,
+                                )}
+                              </div>
+                              <div className="device-kwh">potencial</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="small muted mt-8">
+                        No hay aparatos flexibles con margen ahora mismo. Revisa la flexibilidad de
+                        los aparatos o los porcentajes en Ajustes.
+                      </div>
+                    )}
+                  </div>
+                  <div className="span-5">
+                    {allValleDevices.length > 0 ? (
+                      <div className="banner" style={{ background: 'var(--success-soft)' }}>
+                        <Zap size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                        <span>
+                          <strong>Ya en valle:</strong>{' '}
+                          {allValleDevices
+                            .slice(0, 4)
+                            .map((device) => device.name)
+                            .join(', ')}
+                          {allValleDevices.length > 4 ? '…' : ''}. Buen trabajo.
+                        </span>
+                      </div>
+                    ) : null}
+                    {comparison.note ? (
+                      <div className="small muted mt-8">{comparison.note}</div>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-8"
+                      onClick={() => navigate('/devices')}
+                    >
+                      Revisar dispositivos <ArrowRight size={13} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
           <Card className="span-5">
             <div className="card-header">

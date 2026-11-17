@@ -46,6 +46,7 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 - `app/services/periods.py`: calendario 2.0TD, festivos, horas reales por periodo y ventanas valle.
 - `app/services/tariff.py`: selección de precios por mes, término de potencia, cuotas, impuestos y factura.
 - `app/services/estimation.py`: reparto de energía por tramo para cada modo de dispositivo.
+- `app/services/comparison.py`: coste real frente a todo punta/llano/valle, ahorro conseguido y potencial de los aparatos flexibles según su flexibilidad.
 - `app/services/energy_readings.py`: lectura de contadores de energía de Home Assistant y caché mensual.
 - `app/services/pepe.py`: cliente y parser de la API pública de Pepe.
 - `app/services/ha.py`: cliente REST y WebSocket de Home Assistant, entidades, historial, estadísticas, registro de áreas y automatizaciones.

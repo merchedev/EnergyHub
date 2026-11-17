@@ -26,7 +26,7 @@ def _load_env_files() -> None:
 _load_env_files()
 
 APP_NAME = "EnergyHub"
-APP_VERSION = "0.3.6"
+APP_VERSION = "0.3.7"
 DEFAULT_TIMEZONE = "Europe/Madrid"
 GITHUB_REPO_URL = "https://github.com/merchedev/EnergyHub"
 CHANGELOG_URL = os.getenv(

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
 from ..models import Calibration, Contract, Device, Recommendation, TariffPrice
+from . import comparison
 from .estimation import DeviceEstimate
 from .ha import is_controllable
 
@@ -162,6 +163,8 @@ def generate_recommendations(
     month: int,
     device_rows: Iterable[tuple[Device, DeviceEstimate]],
     calibration: Calibration | None,
+    shift_flexible_pct: float = comparison.DEFAULT_SHIFT_FLEXIBLE_PCT,
+    shift_semi_pct: float = comparison.DEFAULT_SHIFT_SEMI_PCT,
     ha_configured: bool = False,
 ) -> list[Recommendation]:
     rows = list(device_rows)
@@ -200,30 +203,32 @@ def generate_recommendations(
 
         # Cargas que se pueden desplazar a valle.
         for device, est in rows:
-            if device.flexibility == "none" or device.mode == "always_on":
-                continue
-            energy_shiftable = est.by_period.get("P1", 0.0) + est.by_period.get("P2", 0.0)
-            if energy_shiftable <= 0.1:
-                continue
-            shift = 0.7 if device.flexibility == "flexible" else 0.3
-            savings = (
-                est.by_period.get("P1", 0.0) * max(0.0, p1 - p3) * shift
-                + est.by_period.get("P2", 0.0) * max(0.0, p2 - p3) * shift
+            comp = comparison.device_comparison(
+                device,
+                est,
+                price,
+                contract,
+                shift_flexible_pct=shift_flexible_pct,
+                shift_semi_pct=shift_semi_pct,
+                price_is_fallback=price_is_fallback,
             )
-            if savings < 0.3:
+            if comp is None or not comp.is_flexible:
+                continue
+            if comp.shiftable_energy_kwh <= 0.1 or comp.shiftable_saving_eur < 0.3:
                 continue
             drafts.append(
                 RecDraft(
                     id=f"rec-shift-{device.id}",
                     rule="shift_to_valle",
                     device_id=device.id,
-                    severity="high" if savings >= 3 else "medium",
+                    severity="high" if comp.shiftable_saving_eur >= 3 else "medium",
                     title=f"Mueve {device.name} a valle",
                     description=(
-                        f"Estimas {energy_shiftable:.1f} kWh en punta/llano. Pasando el "
-                        f"{shift * 100:.0f}% a valle ahorrarías unos {savings:.2f} €/mes."
+                        f"Estimas {comp.shiftable_energy_kwh:.1f} kWh en punta/llano. Pasando el "
+                        f"{comp.shift_factor * 100:.0f}% a valle ahorrarías unos "
+                        f"{comp.shiftable_saving_eur:.2f} €/mes."
                     ),
-                    savings_eur_month=round(savings, 2),
+                    savings_eur_month=round(comp.shiftable_saving_eur, 2),
                     confidence=est.confidence,
                     action="Programa el aparato al empezar el tramo valle o usa una automatización.",
                     automation_kind="reminder",

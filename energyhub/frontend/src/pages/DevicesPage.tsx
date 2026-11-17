@@ -254,12 +254,31 @@ export function DevicesPage() {
                     <div className="mt-12">
                       <PeriodBar values={device.by_period} height={7} />
                       <div className="between mt-8">
-                        <span className="small muted">Valle, llano y punta</span>
                         <span className="small muted">
-                          {device.min_cost !== device.max_cost
-                            ? `Rango ${eur(device.min_cost)}–${eur(device.max_cost)}`
-                            : 'Consumo continuo'}
+                          {device.comparison
+                            ? `${device.comparison.savings_vs_p1_eur >= 0 ? 'Ahorro' : 'Diferencia'} vs. punta: ${eur(Math.abs(device.comparison.savings_vs_p1_eur))}`
+                            : 'Valle, llano y punta'}
                         </span>
+                        {device.comparison && device.comparison.has_period_difference ? (
+                          device.comparison.is_flexible &&
+                          device.comparison.shiftable_saving_eur > 0 ? (
+                            <Badge tone="yellow">
+                              Potencial valle: {eur(device.comparison.shiftable_saving_eur)}
+                            </Badge>
+                          ) : device.comparison.valle_share >= 99.9 ? (
+                            <Badge tone="green">Todo en valle</Badge>
+                          ) : device.comparison.is_always_on || !device.comparison.is_flexible ? (
+                            <Badge tone="neutral">No desplazable</Badge>
+                          ) : (
+                            <Badge tone="green">{pct(device.comparison.valle_share, 0)} en valle</Badge>
+                          )
+                        ) : (
+                          <span className="small muted">
+                            {device.min_cost !== device.max_cost
+                              ? `Rango ${eur(device.min_cost)}–${eur(device.max_cost)}`
+                              : 'Consumo continuo'}
+                          </span>
+                        )}
                       </div>
                     </div>
 

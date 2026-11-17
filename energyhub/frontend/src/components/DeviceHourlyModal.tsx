@@ -20,6 +20,7 @@ import {
   Modal,
   PeriodBar,
   PeriodLegend,
+  Segmented,
   Select,
   Stat,
   Tabs,
@@ -76,6 +77,7 @@ function resolutionLabel(value: DeviceHourlyResponse['energy_resolution']): stri
 export function DeviceHourlyModal({ device, onClose }: { device: Device; onClose: () => void }) {
   const [month, setMonth] = useState(monthInputValue())
   const [view, setView] = useState<View>('profile')
+  const [taxMode, setTaxMode] = useState<'net' | 'gross'>('net')
   const [selectedDate, setSelectedDate] = useState('')
   const { data, loading, error } = useApi<DeviceHourlyResponse>(
     `/devices/${device.id}/hourly?month=${month}`,
@@ -138,6 +140,29 @@ export function DeviceHourlyModal({ device, onClose }: { device: Device; onClose
   }, [data])
 
   const topPeriod = data?.top_period ?? null
+  const showTaxes = taxMode === 'gross'
+  const comparisonValues = data?.comparison
+    ? {
+        actual: showTaxes
+          ? data.comparison.actual_cost_with_taxes_eur
+          : data.comparison.actual_cost_eur,
+        p1: showTaxes ? data.comparison.all_p1_cost_with_taxes_eur : data.comparison.all_p1_cost_eur,
+        p2: showTaxes ? data.comparison.all_p2_cost_with_taxes_eur : data.comparison.all_p2_cost_eur,
+        p3: showTaxes ? data.comparison.all_p3_cost_with_taxes_eur : data.comparison.all_p3_cost_eur,
+        savings: showTaxes
+          ? data.comparison.savings_vs_p1_with_taxes_eur
+          : data.comparison.savings_vs_p1_eur,
+        savingsOther: showTaxes
+          ? data.comparison.savings_vs_p1_eur
+          : data.comparison.savings_vs_p1_with_taxes_eur,
+        potential: showTaxes
+          ? data.comparison.shiftable_saving_with_taxes_eur
+          : data.comparison.shiftable_saving_eur,
+        potentialOther: showTaxes
+          ? data.comparison.shiftable_saving_eur
+          : data.comparison.shiftable_saving_with_taxes_eur,
+      }
+    : null
   const subtitle = data
     ? `${data.month_label} · ${resolutionLabel(data.energy_resolution)}`
     : `${monthTitle(month)} · leyendo consumo…`
@@ -447,6 +472,92 @@ export function DeviceHourlyModal({ device, onClose }: { device: Device; onClose
               </div>
             </div>
           </div>
+
+          {data.comparison && data.comparison.has_period_difference ? (
+            <div className="card mt-16">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Coste según el horario</h2>
+                  <p className="card-subtitle">Mismo consumo, distinto tramo.</p>
+                </div>
+                <div className="flex gap-8" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Badge tone={data.comparison.valle_share >= 50 ? 'green' : 'neutral'}>
+                    {pct(data.comparison.valle_share, 0)} en valle
+                  </Badge>
+                  <Segmented
+                    value={taxMode}
+                    onChange={setTaxMode}
+                    options={[
+                      { value: 'net', label: 'Sin impuestos' },
+                      { value: 'gross', label: 'Con impuestos' },
+                    ]}
+                    columns={2}
+                  />
+                </div>
+              </div>
+              <div className="card-body">
+                <div className="stat-grid">
+                  <Stat
+                    label="Coste real"
+                    value={eur(comparisonValues?.actual)}
+                    meta={showTaxes ? 'Energía con impuestos' : 'Energía, sin fijos'}
+                  />
+                  <Stat
+                    label="Todo en punta"
+                    value={eur(comparisonValues?.p1)}
+                    meta="Si todo fuera punta"
+                  />
+                  <Stat
+                    label="Todo en llano"
+                    value={eur(comparisonValues?.p2)}
+                    meta="Si todo fuera llano"
+                  />
+                  <Stat
+                    label="Todo en valle"
+                    value={eur(comparisonValues?.p3)}
+                    meta="Mínimo teórico"
+                  />
+                </div>
+                <div className="small muted mt-12">
+                  <strong style={{ color: 'var(--text)' }}>
+                    {(comparisonValues?.savings ?? 0) >= 0 ? 'Has ahorrado' : 'Estás pagando'}{' '}
+                    {eur(Math.abs(comparisonValues?.savings ?? 0))}{' '}
+                    {(comparisonValues?.savings ?? 0) >= 0
+                      ? 'frente a usar todo el consumo en punta'
+                      : 'más que si todo el consumo fuera punta'}
+                    .
+                  </strong>{' '}
+                  {showTaxes ? 'Sin impuestos' : 'Con impuestos'}:{' '}
+                  {eur(comparisonValues?.savingsOther)}.
+                </div>
+                {data.comparison.is_flexible && (comparisonValues?.potential ?? 0) > 0 ? (
+                  <div className="banner accent mt-12">
+                    <Zap size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      Moviendo el {pct(data.comparison.shift_factor * 100, 0)} de lo que usas en
+                      punta/llano a valle, ahorrarías{' '}
+                      <strong>{eur(comparisonValues?.potential)}/mes</strong> (
+                      {eur(comparisonValues?.potentialOther)} {showTaxes ? 'sin impuestos' : 'con impuestos'}).
+                    </span>
+                  </div>
+                ) : (
+                  <div className="small muted mt-8">
+                    {data.comparison.note ??
+                      (data.comparison.valle_share >= 99.9
+                        ? 'Todo el consumo está en valle; no hay margen de mejora.'
+                        : 'No hay margen de ahorro con la flexibilidad configurada.')}
+                  </div>
+                )}
+                <div className="small muted mt-8">
+                  {data.comparison.price_mode === 'hourly'
+                    ? 'Comparación aproximada con el precio medio de cada tramo PVPC.'
+                    : showTaxes
+                      ? 'Importes con impuestos estimados; no incluyen fijos ni bono social.'
+                      : 'Importes de energía; los fijos e impuestos se muestran aparte.'}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {data.notes.length > 0 ? (
             <div className="small muted mt-12">

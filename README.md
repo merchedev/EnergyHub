@@ -24,6 +24,7 @@ EnergyHub es una app de Home Assistant (antiguo add-on) con panel propio. Estima
 - Zona del dispositivo elegida entre las áreas existentes en Home Assistant.
 - En el modo entidad, potencia, horas y standby quedan plegados como ajustes de respaldo.
 - Cálculo de energía y coste por tramo/hora, con rango mínimo/máximo y confianza.
+- Comparación de coste por horario: real frente a todo punta/llano/valle, ahorro conseguido y potencial de los aparatos flexibles, con o sin impuestos.
 - Factura estimada, proyección y calibración con la factura real.
 - Comparador Pepe vs PVPC con el mismo consumo y potencia.
 - Recomendaciones con ahorro estimado, enlaces directos a la acción y YAML de automatización.

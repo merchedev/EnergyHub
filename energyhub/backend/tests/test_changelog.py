@@ -51,6 +51,7 @@ def test_version_comparison() -> None:
 def test_repository_changelog_contains_current_version() -> None:
     path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
     entries = parse_changelog(path.read_text(encoding="utf-8"))
+    assert any(entry.version == "0.3.7" for entry in entries)
     assert any(entry.version == "0.3.6" for entry in entries)
     assert any(entry.version == "0.3.5" for entry in entries)
     assert any(entry.version == "0.3.4" for entry in entries)
@@ -64,12 +65,12 @@ def test_repository_changelog_contains_current_version() -> None:
     assert any(entry.version == "0.1.2" for entry in entries)
     assert any(entry.version == "0.1.1" for entry in entries)
     assert any(entry.version == "0.1.0" for entry in entries)
-    assert [entry.version for entry in newer_entries(entries, "0.3.5")] == ["0.3.6"]
-    assert [entry.version for entry in newer_entries(entries, "0.3.4")] == ["0.3.6", "0.3.5"]
-    assert [entry.version for entry in newer_entries(entries, "0.3.3")] == [
+    assert [entry.version for entry in newer_entries(entries, "0.3.6")] == ["0.3.7"]
+    assert [entry.version for entry in newer_entries(entries, "0.3.5")] == ["0.3.7", "0.3.6"]
+    assert [entry.version for entry in newer_entries(entries, "0.3.4")] == [
+        "0.3.7",
         "0.3.6",
         "0.3.5",
-        "0.3.4",
     ]
 
 
@@ -110,15 +111,15 @@ def test_repository_changelog_is_compatible_with_home_assistant() -> None:
     path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
     text = path.read_text(encoding="utf-8")
     entries = parse_changelog(text)
-    assert entries[0].version == "0.3.6"
+    assert entries[0].version == "0.3.7"
     assert entries[0].date == "2026-11-17"
-    assert entries[0].notes[0].startswith("En el modo")
+    assert entries[0].notes[0].startswith("Nueva tarjeta")
 
-    only_latest = _home_assistant_release_notes(text, "0.3.5", "0.3.6")
-    assert "## 0.3.6" in only_latest
-    assert "## 0.3.5" not in only_latest
+    only_latest = _home_assistant_release_notes(text, "0.3.6", "0.3.7")
+    assert "## 0.3.7" in only_latest
+    assert "## 0.3.6" not in only_latest
 
-    two_versions = _home_assistant_release_notes(text, "0.3.4", "0.3.6")
+    two_versions = _home_assistant_release_notes(text, "0.3.5", "0.3.7")
+    assert "## 0.3.7" in two_versions
     assert "## 0.3.6" in two_versions
-    assert "## 0.3.5" in two_versions
-    assert "## 0.3.4" not in two_versions
+    assert "## 0.3.5" not in two_versions

@@ -904,7 +904,20 @@ export function DeviceForm({
                   </div>
                 </div>
               ) : null}
-              {preview.min_cost_eur !== preview.max_cost_eur ? (
+              {preview.comparison && preview.comparison.has_period_difference ? (
+                <>
+                  <div className="small muted">
+                    {preview.comparison.savings_vs_p1_eur >= 0 ? 'Ahorro' : 'Diferencia'} vs. punta:{' '}
+                    {eur(Math.abs(preview.comparison.savings_vs_p1_eur))} · todo en valle:{' '}
+                    {eur(preview.comparison.all_p3_cost_eur)}
+                  </div>
+                  {preview.comparison.shiftable_saving_eur > 0 ? (
+                    <div className="small muted">
+                      Potencial valle: {eur(preview.comparison.shiftable_saving_eur)}/mes.
+                    </div>
+                  ) : null}
+                </>
+              ) : preview.min_cost_eur !== preview.max_cost_eur ? (
                 <div className="small muted">
                   Rango según cuándo lo uses: {eur(preview.min_cost_eur)} – {eur(preview.max_cost_eur)}.
                 </div>

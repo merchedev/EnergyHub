@@ -208,6 +208,8 @@ class SettingsUpdate(BaseModel):
     esios_entity_id: str | None = Field(default=None, max_length=160)
     language: str | None = Field(default=None, max_length=8)
     theme: str | None = Field(default=None, max_length=16)
+    shift_flexible_pct: float | None = Field(default=None, ge=0, le=100)
+    shift_semi_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 class ComparatorOut(BaseModel):

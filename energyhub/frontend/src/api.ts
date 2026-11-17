@@ -147,8 +147,21 @@ export const api = {
   haAreas: () => request<{ configured: boolean; items: HaArea[] }>('/ha/areas'),
   settings: () =>
     request<{ esios_entity_id: string; language: string; theme: string; demo_mode: boolean }>('/settings'),
-  updateSettings: (payload: { esios_entity_id?: string | null; language?: string; theme?: string }) =>
-    request<{ esios_entity_id: string; language: string; theme: string; demo_mode: boolean }>('/settings', {
+  updateSettings: (payload: {
+    esios_entity_id?: string | null
+    language?: string
+    theme?: string
+    shift_flexible_pct?: number
+    shift_semi_pct?: number
+  }) =>
+    request<{
+      esios_entity_id: string
+      language: string
+      theme: string
+      demo_mode: boolean
+      shift_flexible_pct: number
+      shift_semi_pct: number
+    }>('/settings', {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),

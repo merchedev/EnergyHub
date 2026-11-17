@@ -28,6 +28,7 @@ import {
   Card,
   ErrorBox,
   Field,
+  Input,
   Loading,
   useToast,
 } from '../components/ui'
@@ -39,6 +40,8 @@ interface Settings {
   language: string
   theme: string
   demo_mode: boolean
+  shift_flexible_pct: number
+  shift_semi_pct: number
 }
 
 type Theme = 'dark' | 'light'
@@ -56,6 +59,9 @@ export function SettingsPage({ onChanged }: { onChanged: () => Promise<void> }) 
   const { data: priceEntities } = useApi<{ configured: boolean; items: HaEntity[] }>('/ha/entities?kind=price')
   const [esiosEntity, setEsiosEntity] = useState('')
   const [savingEsios, setSavingEsios] = useState(false)
+  const [shiftFlexible, setShiftFlexible] = useState('70')
+  const [shiftSemi, setShiftSemi] = useState('30')
+  const [savingShift, setSavingShift] = useState(false)
   const [busy, setBusy] = useState<'demo' | 'reset' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(() =>
@@ -65,6 +71,30 @@ export function SettingsPage({ onChanged }: { onChanged: () => Promise<void> }) 
   useEffect(() => {
     if (settings?.esios_entity_id) setEsiosEntity(settings.esios_entity_id)
   }, [settings?.esios_entity_id])
+
+  useEffect(() => {
+    if (!settings) return
+    setShiftFlexible(String(settings.shift_flexible_pct ?? 70))
+    setShiftSemi(String(settings.shift_semi_pct ?? 30))
+  }, [settings])
+
+  const saveShift = async () => {
+    setSavingShift(true)
+    setError(null)
+    try {
+      await api.updateSettings({
+        shift_flexible_pct: Number(shiftFlexible),
+        shift_semi_pct: Number(shiftSemi),
+      })
+      showToast('Cálculo del ahorro actualizado')
+      await reloadSettings()
+      await onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se han podido guardar los porcentajes')
+    } finally {
+      setSavingShift(false)
+    }
+  }
 
   const saveEsios = async () => {
     setSavingEsios(true)
@@ -236,6 +266,57 @@ export function SettingsPage({ onChanged }: { onChanged: () => Promise<void> }) 
             </div>
             <div className="small muted mt-8">
               La arquitectura está preparada para añadir inglés y otros idiomas.
+            </div>
+          </div>
+        </Card>
+
+        <Card className="span-12">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">Cálculo del ahorro potencial</h2>
+              <p className="card-subtitle">
+                Qué parte del consumo en punta/llano se supone que puedes mover a valle.
+              </p>
+            </div>
+            <Sparkles size={17} className="muted" />
+          </div>
+          <div className="card-body">
+            <div className="form-grid">
+              <Field
+                label="Aparatos flexibles (%)"
+                hint="70 % es conservador. 100 % supone que todo su consumo de punta/llano puede pasar a valle."
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={shiftFlexible}
+                  onChange={(event) => setShiftFlexible(event.target.value)}
+                />
+              </Field>
+              <Field
+                label="Semi-flexibles (%)"
+                hint="Porcentaje que se supone movible en los aparatos marcados como semi-flexibles."
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={shiftSemi}
+                  onChange={(event) => setShiftSemi(event.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="between mt-12" style={{ gap: 12, flexWrap: 'wrap' }}>
+              <span className="small muted">
+                Se usa para el ahorro potencial y las recomendaciones. No cambia el consumo ni el coste
+                real.
+              </span>
+              <Button onClick={() => void saveShift()} disabled={savingShift}>
+                <CheckCircle2 size={14} /> {savingShift ? 'Guardando…' : 'Guardar porcentajes'}
+              </Button>
             </div>
           </div>
         </Card>

@@ -313,6 +313,8 @@ def test_device_hourly_returns_profile_and_top_period() -> None:
         assert len(data["hours"]) == 2
         assert data["price_is_fallback"] is False
         assert abs(data["periods"][2]["cost_eur"] - 0.8) < 0.01
+        assert data["comparison"] is not None
+        assert data["comparison"]["valle_share"] == 100.0
 
 
 def test_dashboard_uses_stored_ha_energy_reading() -> None:
@@ -391,3 +393,42 @@ def test_dashboard_uses_stored_ha_energy_reading() -> None:
         assert abs(data["totals"]["energy_kwh"] - 25.0) < 0.01
         assert data["devices"][0]["energy_source"] == "ha_energy_sensor"
         assert data["devices"][0]["energy_resolution"] == "monthly"
+        assert data["comparison"] is not None
+        assert data["devices"][0]["comparison"] is not None
+
+
+def test_dashboard_includes_savings_comparison() -> None:
+    with TestClient(app) as client:
+        client.post("/api/demo/seed")
+        dashboard = client.get("/api/dashboard?month=2026-11")
+        assert dashboard.status_code == 200
+        data = dashboard.json()
+        comp = data["comparison"]
+        assert comp is not None
+        assert comp["actual_cost_eur"] > 0
+        assert comp["all_p1_cost_eur"] > comp["actual_cost_eur"]
+        assert comp["all_p3_cost_eur"] < comp["actual_cost_eur"]
+        assert comp["shiftable_saving_eur"] > 0
+        assert any(
+            item["comparison"] and item["comparison"]["shiftable_saving_eur"] > 0
+            for item in data["devices"]
+        )
+
+
+def test_settings_shift_percentages() -> None:
+    with TestClient(app) as client:
+        client.post("/api/demo/reset")
+        settings = client.get("/api/settings")
+        assert settings.status_code == 200
+        assert settings.json()["shift_flexible_pct"] == 70.0
+        assert settings.json()["shift_semi_pct"] == 30.0
+
+        updated = client.put(
+            "/api/settings",
+            json={"shift_flexible_pct": 80, "shift_semi_pct": 20},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["shift_flexible_pct"] == 80.0
+        assert updated.json()["shift_semi_pct"] == 20.0
+
+        client.put("/api/settings", json={"shift_flexible_pct": 70, "shift_semi_pct": 30})
