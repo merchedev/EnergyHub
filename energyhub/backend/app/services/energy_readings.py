@@ -184,7 +184,12 @@ async def _history_hourly(
             continue
         delta = value - previous_value
         if delta < 0:
-            return None
+            # Algunos contadores se reinician a diario o al desenchufar el aparato.
+            # Solo aceptamos el reset si la nueva lectura es claramente un reinicio.
+            if value <= max(1.0, previous_value * 0.05):
+                delta = value
+            else:
+                return None
         if delta == 0:
             continue
         energy = delta * factor

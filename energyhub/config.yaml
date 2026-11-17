@@ -1,5 +1,5 @@
 name: EnergyHub
-version: "0.3.3"
+version: "0.3.4"
 slug: energyhub
 description: Control y estimación del consumo eléctrico del hogar, por aparato y por tramo horario.
 url: https://github.com/merchedev/EnergyHub

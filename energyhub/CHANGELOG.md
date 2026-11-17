@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+2026-11-17
+
+- El reparto horario desde historial reconoce contadores que se reinician a diario o al desenchufar el aparato.
+- Si el reset es plausible (lectura nueva cercana a cero), se sigue calculando el reparto por hora en lugar de volver al modo mensual.
+- Si el salto negativo no parece un reset, se mantiene el respaldo mensual.
+- Tests de resets diarios en el historial.
+
 ## 0.3.3
 2026-11-17
 
