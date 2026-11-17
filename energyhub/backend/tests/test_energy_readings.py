@@ -187,6 +187,35 @@ async def test_fetch_month_energy_prefers_long_term_statistics() -> None:
     assert abs(sum(result.hourly.values()) - 20.0) < 0.01
 
 
+class FakeStatsEpochMsHaClient(FakeHaClient):
+    """Home Assistant returns statistics timestamps as epoch milliseconds."""
+
+    async def get_statistics(self, _entity_id: str, _start, _end, period: str = "hour"):
+        assert period == "hour"
+        return [
+            {"start": 1767225600000, "end": 1767229200000, "change": 12.5},
+            {"start": 1767229200000, "end": 1767232800000, "change": 7.5},
+        ]
+
+
+async def test_fetch_month_energy_parses_statistics_epoch_milliseconds() -> None:
+    client = FakeStatsEpochMsHaClient(energy_state(), [])
+    result = await energy_readings.fetch_month_energy(
+        client,  # type: ignore[arg-type]
+        make_contract(),
+        "sensor.lavadora_energy",
+        2026,
+        1,
+        now=datetime(2026, 2, 15, tzinfo=timezone.utc),
+    )
+    assert result.error is None
+    assert result.energy_kwh == 20.0
+    assert result.hourly is not None
+    assert len(result.hourly) == 2
+    assert abs(sum(result.hourly.values()) - 20.0) < 0.01
+    assert sorted(hour.hour for hour in result.hourly) == [1, 2]
+
+
 async def test_fetch_month_energy_builds_hourly_from_history() -> None:
     history = [
         (datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc), 100.0),

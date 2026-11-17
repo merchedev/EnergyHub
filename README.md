@@ -102,6 +102,8 @@ La propuesta de precios de Pepe indica de dónde salen los datos y enlaza a la t
 
 La ficha permite buscar entidades de Home Assistant y usar un contador de energía acumulada. Si Home Assistant devuelve estadísticas horarias, el reparto por punta, llano y valle es exacto; si solo hay total mensual, se reparte por la franja típica.
 
+En **Dispositivos**, el botón **Consumo** abre el perfil horario del aparato: gráfico de 24 horas, detalle por día y el tramo (valle, llano o punta) con más consumo.
+
 ![Entidades de Home Assistant](docs/screenshots/entity-picker.png)
 
 | Resumen | Dispositivos |

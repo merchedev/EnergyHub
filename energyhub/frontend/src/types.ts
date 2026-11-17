@@ -297,6 +297,67 @@ export interface DevicePreview {
   energy_error: string | null
 }
 
+export interface DeviceHourlyHour {
+  timestamp: string
+  date: string
+  hour: number
+  energy_kwh: number
+  price: number
+  period: PeriodId
+  cost_eur: number
+}
+
+export interface DeviceHourlyPeriod {
+  id: PeriodId
+  name: string
+  price: number
+  energy_kwh: number
+  cost_eur: number
+  share: number
+}
+
+export interface DeviceHourlyDay {
+  date: string
+  energy_kwh: number
+  cost_eur: number
+  P1: number
+  P2: number
+  P3: number
+}
+
+export interface DeviceHourlyProfileHour {
+  hour: number
+  energy_kwh: number
+  cost_eur: number
+  P1: number
+  P2: number
+  P3: number
+}
+
+export interface DeviceHourlyResponse {
+  month: string
+  month_label: string
+  energy_kwh: number
+  cost_eur: number
+  energy_source: 'ha_energy_sensor' | 'estimated'
+  energy_resolution: 'hourly' | 'monthly' | 'estimated'
+  confidence: Confidence
+  price_is_fallback: boolean
+  price_month_label: string
+  price_reference_month: string | null
+  price_source: string | null
+  currency: string
+  periods: DeviceHourlyPeriod[]
+  profile: DeviceHourlyProfileHour[]
+  days: DeviceHourlyDay[]
+  hours: DeviceHourlyHour[]
+  top_period: DeviceHourlyPeriod | null
+  top_hour: { hour: number; label: string; energy_kwh: number } | null
+  top_day: { date: string; energy_kwh: number; cost_eur: number } | null
+  notes: string[]
+  typical_windows: Window[]
+}
+
 export interface DeviceSummary {
   energy_kwh: number
   cost: number

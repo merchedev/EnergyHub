@@ -75,6 +75,36 @@ def _unit_factor(unit: str | None) -> float | None:
     return ENERGY_UNITS.get((unit or "").strip())
 
 
+def _statistics_moment(raw: object) -> datetime | None:
+    """Parse a statistics timestamp.
+
+    Home Assistant's ``recorder/statistics_during_period`` WebSocket command
+    returns ``start`` and ``end`` as Unix epoch milliseconds. Tests and older
+    payloads may use ISO strings, so both formats are accepted.
+    """
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        try:
+            moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    if abs(value) > 10_000_000_000:
+        value /= 1000.0
+    try:
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 async def _reading_near(
     client: HaClient,
     entity_id: str,
@@ -128,16 +158,11 @@ async def _statistics_data(
             continue
         total += change
         has_change = True
-        raw_start = row.get("start")
-        if raw_start:
-            try:
-                moment = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            if moment.tzinfo is None:
-                moment = moment.replace(tzinfo=timezone.utc)
-            local_hour = moment.astimezone(tz).replace(minute=0, second=0, microsecond=0)
-            hourly[local_hour] = hourly.get(local_hour, 0.0) + change * factor
+        moment = _statistics_moment(row.get("start"))
+        if moment is None:
+            continue
+        local_hour = moment.astimezone(tz).replace(minute=0, second=0, microsecond=0)
+        hourly[local_hour] = hourly.get(local_hour, 0.0) + change * factor
     if not has_change or total < 0:
         return None
     total_kwh = total * factor

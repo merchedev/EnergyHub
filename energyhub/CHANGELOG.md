@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.5
+2026-11-17
+
+- Corregida la lectura de estadísticas horarias de Home Assistant: la API devuelve las marcas de tiempo en milisegundos y se interpretaban como fechas ISO.
+- El reparto por punta, llano y valle usa la energía real de cada hora también cuando el contador solo publica estadísticas de largo plazo.
+- Un precio manual del mes consultado tiene prioridad sobre los precios de Pepe de un mes anterior, para que el aviso de precio provisional desaparezca al confirmar el mes actual.
+- Nueva vista **Consumo** por dispositivo: gráfico de 24 horas, perfil del mes y detalle por día.
+- La vista indica el tramo tarifario (valle, llano o punta) con más consumo, la hora y el día de mayor uso.
+- Tests con el formato real de `recorder/statistics_during_period`, de prioridad de precios manuales y del perfil horario.
+
 ## 0.3.4
 2026-11-17
 

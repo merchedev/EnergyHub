@@ -50,7 +50,7 @@ EnergyHub es una app de Home Assistant (add-on) que se ejecuta en un contenedor 
 - `app/services/pepe.py`: cliente y parser de la API pública de Pepe.
 - `app/services/ha.py`: cliente REST de Home Assistant, entidades, historial y automatizaciones.
 - `app/services/recommendations.py`: reglas de ahorro, YAML y payload de automatización.
-- `app/routers/api.py`: API JSON consumida por el frontend.
+- `app/routers/api.py`: API JSON consumida por el frontend, incluido `GET /devices/{id}/hourly` con el perfil horario y el reparto por tramo de cada aparato.
 
 ### Estimación
 
@@ -62,7 +62,7 @@ Para cada dispositivo se construye una estimación mensual:
 4. Se aplica el factor de calibración global.
 5. Se multiplica por el precio de cada tramo del mes.
 
-Los modos actuales son `always_on`, `hours_per_day`, `cycles` y `entity`. En `entity`, el MVP usa las horas de respaldo; la lectura de historial real ya está disponible en el cliente de HA y se activará en la siguiente iteración.
+Los modos actuales son `always_on`, `hours_per_day`, `cycles` y `entity`. En `entity`, se usa la energía real de la entidad de Home Assistant; si hay estadísticas o historial horario, el reparto por tramos es exacto, y si solo hay total mensual, se reparte con la franja típica.
 
 ### Precios
 
@@ -77,6 +77,7 @@ Los modos actuales son `always_on`, `hours_per_day`, `cycles` y `entity`. En `en
 - Recharts para el ranking visual.
 - HashRouter para evitar problemas de rutas con Ingress.
 - `api.ts` centraliza las llamadas; en desarrollo Vite hace proxy a `127.0.0.1:8000`.
+- `DeviceHourlyModal` muestra el consumo por hora, el detalle por día y el tramo tarifario con más uso.
 
 ## Seguridad y privacidad
 

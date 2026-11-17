@@ -101,14 +101,22 @@ def _price_for(
     profile = profiles.get_profile(contract.tariff_profile_id)
     if profile.get("price_source") == "ree_pvpc":
         return prices.ensure_tariff_price(db, contract, year, month), False
+
+    manual_price, manual_fallback = tariff.get_price_for_month(
+        db, contract, year, month, source="manual"
+    )
+    # Un precio manual del mes exacto es una confirmación explícita del usuario
+    # y debe prevalecer sobre el arrastre del mes anterior de Pepe.
+    if manual_price is not None and not manual_fallback:
+        return manual_price, False
+
     if str(profile.get("price_source", "")).startswith("pepe_api"):
         price, is_fallback = tariff.get_price_for_month(
             db, contract, year, month, source="pepe_api"
         )
         if price is not None:
             return price, is_fallback
-        return tariff.get_price_for_month(db, contract, year, month, source="manual")
-    return tariff.get_price_for_month(db, contract, year, month, source="manual")
+    return manual_price, manual_fallback
 
 
 def _estimate_rows(
@@ -882,6 +890,133 @@ async def preview_device(payload: DevicePreviewIn, db: Session = Depends(get_db)
         "energy_resolution": est.energy_resolution,
         "energy_entity_id": device.energy_entity_id,
         "energy_error": energy_error,
+    }
+
+
+@router.get("/devices/{device_id}/hourly")
+async def device_hourly(
+    device_id: int,
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return the hourly consumption profile of one device for a month."""
+    contract = _contract_or_404(db)
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
+    year, month_number = _month(month, contract)
+    real_energy = None
+    real_hourly = None
+    if device.mode == "entity" and device.energy_entity_id and ha_client.configured:
+        result = await energy_readings.cached_month_energy(
+            ha_client, contract, str(device.energy_entity_id), year, month_number
+        )
+        real_energy = result.energy_kwh
+        real_hourly = result.hourly
+    price, curve, est, is_fallback = _estimate_one(
+        db,
+        contract,
+        device,
+        year,
+        month_number,
+        real_energy_kwh=real_energy,
+        real_hourly=real_hourly,
+    )
+    price_by_hour = {point.local_dt: point for point in curve.points}
+    day_totals: dict[str, dict] = {}
+    profile = [
+        {"hour": hour, "energy_kwh": 0.0, "cost_eur": 0.0, "P1": 0.0, "P2": 0.0, "P3": 0.0}
+        for hour in range(24)
+    ]
+    hours: list[dict] = []
+    for moment, raw_energy in sorted(est.hourly.items()):
+        try:
+            energy = float(raw_energy or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if energy <= 0:
+            continue
+        point = price_by_hour.get(moment)
+        if point is None:
+            continue
+        cost = energy * point.price
+        hours.append(
+            {
+                "timestamp": moment.isoformat(),
+                "date": moment.date().isoformat(),
+                "hour": moment.hour,
+                "energy_kwh": round(energy, 4),
+                "price": point.price,
+                "period": point.period,
+                "cost_eur": round(cost, 4),
+            }
+        )
+        row = profile[moment.hour]
+        row["energy_kwh"] += energy
+        row["cost_eur"] += cost
+        row[point.period] += energy
+        day = day_totals.setdefault(
+            moment.date().isoformat(),
+            {
+                "date": moment.date().isoformat(),
+                "energy_kwh": 0.0,
+                "cost_eur": 0.0,
+                "P1": 0.0,
+                "P2": 0.0,
+                "P3": 0.0,
+            },
+        )
+        day["energy_kwh"] += energy
+        day["cost_eur"] += cost
+        day[point.period] += energy
+
+    total_energy = sum(row["energy_kwh"] for row in profile)
+    period_rows = est.period_rows(price)
+    for row in period_rows:
+        row["share"] = round((row["energy_kwh"] / total_energy * 100.0) if total_energy > 0 else 0.0, 2)
+    top_period = max(period_rows, key=lambda row: row["energy_kwh"], default=None)
+    top_hour = max(profile, key=lambda row: row["energy_kwh"], default=None)
+    top_day = max(day_totals.values(), key=lambda row: row["energy_kwh"], default=None)
+    return {
+        "month": f"{year:04d}-{month_number:02d}",
+        "month_label": periods.month_label_es(year, month_number),
+        "energy_kwh": est.energy_kwh,
+        "cost_eur": est.cost_eur,
+        "energy_source": est.energy_source,
+        "energy_resolution": est.energy_resolution,
+        "confidence": est.confidence,
+        "price_is_fallback": is_fallback if price is not None else False,
+        "price_month_label": periods.month_label_es(year, month_number),
+        "price_reference_month": (
+            f"{price.valid_from.year:04d}-{price.valid_from.month:02d}" if price is not None else None
+        ),
+        "price_source": price.source if price is not None else None,
+        "currency": contract.currency,
+        "periods": period_rows,
+        "profile": profile,
+        "days": sorted(day_totals.values(), key=lambda row: row["date"]),
+        "hours": hours,
+        "top_period": top_period if top_period is not None and top_period["energy_kwh"] > 0 else None,
+        "top_hour": (
+            {
+                "hour": top_hour["hour"],
+                "label": f"{top_hour['hour']:02d}:00–{top_hour['hour'] + 1:02d}:00",
+                "energy_kwh": round(top_hour["energy_kwh"], 4),
+            }
+            if top_hour is not None and top_hour["energy_kwh"] > 0
+            else None
+        ),
+        "top_day": (
+            {
+                "date": top_day["date"],
+                "energy_kwh": round(top_day["energy_kwh"], 4),
+                "cost_eur": round(top_day["cost_eur"], 4),
+            }
+            if top_day is not None and top_day["energy_kwh"] > 0
+            else None
+        ),
+        "notes": est.notes,
+        "typical_windows": estimation.device_windows(device),
     }
 
 

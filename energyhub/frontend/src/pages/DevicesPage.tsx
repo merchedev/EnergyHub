@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
+  BarChart3,
   ChevronRight,
   Gauge,
   Home,
@@ -31,6 +32,7 @@ import {
   watts,
 } from '../lib/format'
 import type { CatalogItem, Device } from '../types'
+import { DeviceHourlyModal } from '../components/DeviceHourlyModal'
 import { DeviceForm } from './DeviceForm'
 
 export function DevicesPage() {
@@ -43,6 +45,7 @@ export function DevicesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Device | null>(null)
   const [initialCategory, setInitialCategory] = useState<string | null>(null)
+  const [hourlyDevice, setHourlyDevice] = useState<Device | null>(null)
 
   const catalog = catalogData?.items ?? []
   const devices = data?.items ?? []
@@ -223,9 +226,14 @@ export function DevicesPage() {
                           </div>
                         </div>
                       </div>
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(device)}>
-                        Editar <ChevronRight size={14} />
-                      </Button>
+                      <div className="flex gap-8" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <Button size="sm" variant="ghost" onClick={() => setHourlyDevice(device)}>
+                          <BarChart3 size={14} /> Consumo
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(device)}>
+                          Editar <ChevronRight size={14} />
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="between mt-16" style={{ alignItems: 'flex-end' }}>
@@ -284,6 +292,10 @@ export function DevicesPage() {
           await reload()
         }}
       />
+
+      {hourlyDevice ? (
+        <DeviceHourlyModal device={hourlyDevice} onClose={() => setHourlyDevice(null)} />
+      ) : null}
     </div>
   )
 }
