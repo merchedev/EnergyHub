@@ -106,7 +106,7 @@ Los ciclos se reparten entre los días y la franja típica. El standby se calcul
 
 Si el aparato expone un contador de energía acumulada (`device_class: energy`, unidad kWh o Wh, preferiblemente `state_class: total_increasing`), se puede seleccionar en la ficha:
 
-- La app lee la primera y la última lectura del mes desde el historial de Home Assistant.
+- La app usa las estadísticas de largo plazo de Home Assistant cuando están disponibles; si no, recurre al historial de estados.
 - Convierte Wh o MWh a kWh.
 - Si la lectura final es menor que la inicial, no la usa y mantiene la estimación manual.
 - El consumo real se reparte por la franja típica del aparato; el reparto por tramos es aproximado si solo se conoce el total mensual.

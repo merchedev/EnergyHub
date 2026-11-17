@@ -92,6 +92,41 @@ async def _reading_near(
     return after[0] if after else None
 
 
+async def _statistics_total(
+    client: HaClient,
+    entity_id: str,
+    start_local: datetime,
+    end_local: datetime,
+    now: datetime,
+    factor: float,
+) -> float | None:
+    get_statistics = getattr(client, "get_statistics", None)
+    if get_statistics is None:
+        return None
+    stats_end = min(end_local, now)
+    if stats_end <= start_local:
+        return None
+    try:
+        rows = await get_statistics(entity_id, start_local, stats_end, period="hour")
+    except HaError:
+        return None
+    if not rows:
+        return None
+    total = 0.0
+    has_change = False
+    for row in rows:
+        if not isinstance(row, dict) or row.get("change") is None:
+            continue
+        try:
+            total += float(row["change"])
+            has_change = True
+        except (TypeError, ValueError):
+            continue
+    if not has_change or total < 0:
+        return None
+    return total * factor
+
+
 async def fetch_month_energy(
     client: HaClient,
     contract: Contract,
@@ -100,7 +135,7 @@ async def fetch_month_energy(
     month: int,
     now: datetime | None = None,
 ) -> EnergyReadResult:
-    """Read a cumulative kWh sensor for a full month using HA history."""
+    """Read a cumulative kWh sensor for a full month using HA statistics or history."""
     now = now or datetime.now(timezone.utc)
     start_local, end_local = _month_bounds(contract, year, month)
     if start_local.astimezone(timezone.utc) > now:
@@ -123,6 +158,12 @@ async def fetch_month_energy(
             error="La entidad parece una medición instantánea, no un contador acumulado.",
         )
 
+    statistics_energy = await _statistics_total(
+        client, entity_id, start_local, end_local, now, factor
+    )
+    if statistics_energy is not None:
+        return EnergyReadResult(energy_kwh=statistics_energy, unit=str(unit))
+
     end_is_current = end_local.astimezone(timezone.utc) > now - timedelta(minutes=2)
     end_value = _numeric_state(state) if end_is_current else await _reading_near(client, entity_id, end_local)
     if end_value is None:
@@ -133,7 +174,7 @@ async def fetch_month_energy(
             None,
             end_value=end_value,
             unit=str(unit),
-            error="No hay una lectura inicial válida para el mes.",
+            error="No hay historial suficiente al inicio del mes. Revisa que la entidad conserve estadísticas en Home Assistant.",
         )
 
     energy_kwh = (end_value - start_value) * factor

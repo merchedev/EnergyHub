@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
+from websockets.asyncio.client import connect as websocket_connect
 
 from ..config import HA_TOKEN, HA_URL, SUPERVISOR_TOKEN
 
@@ -55,6 +59,73 @@ class HaClient:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+
+    @property
+    def websocket_url(self) -> str:
+        if SUPERVISOR_TOKEN:
+            return "ws://supervisor/core/websocket"
+        parsed = urlparse(self.base_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        path = parsed.path.rstrip("/")
+        if path.endswith("/api"):
+            path = path[:-4]
+        return f"{scheme}://{parsed.netloc}{path}/websocket"
+
+    async def get_statistics(
+        self,
+        entity_id: str,
+        start: datetime,
+        end: datetime,
+        period: str = "hour",
+    ) -> list[dict]:
+        if not self.configured:
+            raise HaNotConfigured("Home Assistant no está configurado")
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end <= start:
+            return []
+        request_id = 1
+        try:
+            async with websocket_connect(self.websocket_url, open_timeout=10, close_timeout=5) as ws:
+                hello = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+                if hello.get("type") == "auth_required":
+                    await ws.send(json.dumps({"type": "auth", "access_token": self.token}))
+                    auth = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+                else:
+                    auth = hello
+                if auth.get("type") != "auth_ok":
+                    raise HaError("Home Assistant ha rechazado la autenticación WebSocket")
+                await ws.send(
+                    json.dumps(
+                        {
+                            "id": request_id,
+                            "type": "recorder/statistics_during_period",
+                            "start_time": start.isoformat(),
+                            "end_time": end.isoformat(),
+                            "statistic_ids": [entity_id],
+                            "period": period,
+                            "types": ["change"],
+                        }
+                    )
+                )
+                while True:
+                    message = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+                    if message.get("id") != request_id:
+                        continue
+                    if not message.get("success"):
+                        error = message.get("error") or {}
+                        raise HaError(
+                            f"Home Assistant no ha devuelto estadísticas: {error.get('message', 'error desconocido')}"
+                        )
+                    result = message.get("result") or {}
+                    rows = result.get(entity_id) if isinstance(result, dict) else None
+                    return rows if isinstance(rows, list) else []
+        except HaError:
+            raise
+        except Exception as exc:
+            raise HaError(f"Error consultando estadísticas de Home Assistant: {exc}") from exc
 
     async def _get(self, path: str, params: dict | None = None) -> Any:
         if not self.configured:

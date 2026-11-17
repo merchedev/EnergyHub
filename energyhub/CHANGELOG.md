@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+2026-11-17
+
+- La lectura de energía usa las estadísticas de largo plazo de Home Assistant cuando están disponibles.
+- Esto evita el error de «lectura inicial» cuando el historial bruto no llega al inicio del mes, pero el contador sí tiene estadísticas.
+- Si no hay estadísticas ni historial suficiente, se muestra un mensaje más claro y se mantiene la estimación manual.
+- Añadida la dependencia `websockets` para consultar estadísticas por la API WebSocket de Home Assistant.
+- Tests de lectura mediante estadísticas y del flujo de respaldo.
+
 ## 0.3.0
 2026-11-16
 

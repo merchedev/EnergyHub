@@ -160,3 +160,23 @@ async def test_refresh_readings_stores_month_energy_and_skips_complete_month() -
             db, client, contract, [device], 2026, 1
         )
         assert skipped == 0
+
+
+class FakeStatsHaClient(FakeHaClient):
+    async def get_statistics(self, _entity_id: str, _start, _end, period: str = "hour"):
+        assert period == "hour"
+        return [{"change": 12.5}, {"change": 7.5}]
+
+
+async def test_fetch_month_energy_prefers_long_term_statistics() -> None:
+    client = FakeStatsHaClient(energy_state(), [])
+    result = await energy_readings.fetch_month_energy(
+        client,  # type: ignore[arg-type]
+        make_contract(),
+        "sensor.lavadora_energy",
+        2026,
+        1,
+        now=datetime(2026, 2, 15, tzinfo=timezone.utc),
+    )
+    assert result.error is None
+    assert result.energy_kwh == 20.0
