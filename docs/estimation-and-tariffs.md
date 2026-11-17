@@ -110,6 +110,7 @@ Si el aparato expone un contador de energía acumulada (`device_class: energy`, 
 - Convierte Wh o MWh a kWh.
 - Si la lectura final es menor que la inicial, no la usa y mantiene la estimación manual.
 - Si las estadísticas incluyen el cambio de energía por hora, el reparto por punta, llano y valle es exacto para cada hora.
+- Si no hay estadísticas, se calcula el reparto horario a partir de los cambios del contador en el historial de estados.
 - Si solo se conoce el total mensual, el reparto por tramos usa la franja típica del aparato y es aproximado.
 - Para el mes actual se actualiza como máximo cada 15 minutos. Los meses cerrados se conservan.
 - Si la entidad no está disponible o no tiene historial, se usa la estimación por horas o ciclos como respaldo.

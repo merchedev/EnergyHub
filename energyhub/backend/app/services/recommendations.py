@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import Calibration, Contract, Device, Recommendation, TariffPrice
 from .estimation import DeviceEstimate
+from .ha import is_controllable
 
 CATEGORY_TIPS = {
     "fridge": "Revisa la temperatura (4 °C nevera / -18 °C congelador), las gomas y la ventilación trasera.",
@@ -102,7 +103,7 @@ def build_automation_yaml(
 
 
 def build_copy_yaml(device: Device) -> str:
-    if not device.entity_id:
+    if not is_controllable(device.entity_id):
         return ""
     payload = {
         "alias": f"EnergyHub · {device.name} en valle",
@@ -253,7 +254,7 @@ def generate_recommendations(
                     savings_eur_month=round(standby_cost, 2),
                     confidence=est.confidence,
                     action="Apaga el aparato o usa un enchufe con interruptor.",
-                    automation_kind="turn_off" if device.entity_id else "reminder",
+                    automation_kind="turn_off" if is_controllable(device.entity_id) else "reminder",
                 )
             )
 
@@ -405,7 +406,7 @@ def recommendation_payload(
         if ha_configured:
             if rec.automation_kind == "reminder":
                 can_create = True
-            elif rec.automation_kind == "turn_off" and device.entity_id:
+            elif rec.automation_kind == "turn_off" and is_controllable(device.entity_id):
                 can_create = True
     return {
         "id": rec.id,

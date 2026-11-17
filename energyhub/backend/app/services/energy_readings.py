@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 from dataclasses import dataclass
@@ -146,6 +147,53 @@ async def _statistics_data(
     return total_kwh, hourly
 
 
+async def _history_hourly(
+    client: HaClient,
+    entity_id: str,
+    start_local: datetime,
+    end_local: datetime,
+    now: datetime,
+    factor: float,
+    tz: ZoneInfo,
+    current_state: dict | None,
+) -> tuple[float, dict[datetime, float] | None] | None:
+    end_query = min(end_local, now)
+    if end_query <= start_local:
+        return None
+    try:
+        rows = await client.get_numeric_history(entity_id, start_local, end_query)
+    except HaError:
+        return None
+    if not rows:
+        return None
+    rows = list(rows)
+    current_value = _numeric_state(current_state)
+    if (
+        current_value is not None
+        and end_query >= now - timedelta(minutes=2)
+        and rows[-1][0] < now - timedelta(minutes=1)
+    ):
+        rows.append((now, current_value))
+    rows.sort(key=lambda item: item[0])
+    if len(rows) < 2:
+        return None
+    hourly: dict[datetime, float] = {}
+    total = 0.0
+    for (previous_ts, previous_value), (moment, value) in itertools.pairwise(rows):
+        if moment <= previous_ts:
+            continue
+        delta = value - previous_value
+        if delta < 0:
+            return None
+        if delta == 0:
+            continue
+        energy = delta * factor
+        local_hour = moment.astimezone(tz).replace(minute=0, second=0, microsecond=0)
+        hourly[local_hour] = hourly.get(local_hour, 0.0) + energy
+        total += energy
+    return total, hourly or None
+
+
 async def fetch_month_energy(
     client: HaClient,
     contract: Contract,
@@ -184,6 +232,24 @@ async def fetch_month_energy(
         statistics_energy, hourly = statistics
         return EnergyReadResult(
             energy_kwh=statistics_energy,
+            unit=str(unit),
+            hourly=hourly,
+        )
+
+    history_hourly = await _history_hourly(
+        client,
+        entity_id,
+        start_local,
+        end_local,
+        now,
+        factor,
+        _contract_tz(contract),
+        state,
+    )
+    if history_hourly is not None:
+        history_energy, hourly = history_hourly
+        return EnergyReadResult(
+            energy_kwh=history_energy,
             unit=str(unit),
             hourly=hourly,
         )

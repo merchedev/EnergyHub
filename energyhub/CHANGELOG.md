@@ -1,15 +1,27 @@
 # Changelog
 
+## 0.3.3
+2026-11-17
+
+- Si no hay estadísticas horarias, el reparto por tramos se calcula con los cambios por hora del historial de estados.
+- El reparto ya no se queda en «mensual» cuando Home Assistant conserva el gráfico horario pero no las estadísticas de largo plazo.
+- La entidad de estado admite `binary_sensor`, además de entidades de control.
+- Para una entidad de solo lectura no se ofrece la automatización de apagado.
+- Tests del reparto horario desde historial y del selector de estado.
+- Corrección de la URL WebSocket de Home Assistant (`/api/websocket`).
+
 ## 0.3.2
 2026-11-17
 
 - Reparto exacto por hora cuando Home Assistant devuelve estadísticas horarias de energía.
+- Si no hay estadísticas, el reparto horario se calcula a partir de los cambios del historial de estados.
 - El coste por punta, llano y valle usa la energía real de cada hora, no la franja típica.
 - Si solo hay total mensual, se mantiene el reparto aproximado por franja típica y se indica en la interfaz.
 - La ficha distingue entre consumo real horario y consumo real mensual.
+- La entidad de estado admite también `binary_sensor`; en ese caso no se ofrece automatización de apagado.
 - Nueva columna `hourly_json` en las lecturas mensuales y migración automática.
 - Corregida la URL WebSocket de Home Assistant para usar `/api/websocket`.
-- Tests de reparto exacto y de estadísticas horarias.
+- Tests de reparto exacto, estadísticas horarias e historial horario.
 
 ## 0.3.1
 2026-11-17

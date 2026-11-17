@@ -14,7 +14,12 @@ from ..config import HA_TOKEN, HA_URL, SUPERVISOR_TOKEN
 
 ON_STATES = {"on", "open", "playing", "heat", "cool", "auto", "home", "charging"}
 CONTROL_DOMAINS = {"switch", "light", "input_boolean", "fan", "climate", "media_player", "script"}
+STATE_DOMAINS = CONTROL_DOMAINS | {"binary_sensor"}
 SENSOR_UNITS = {"W", "kW", "kWh", "Wh", "MWh", "€/kWh", "€", "EUR"}
+
+
+def is_controllable(entity_id: str | None) -> bool:
+    return bool(entity_id and entity_id.split(".", 1)[0] in CONTROL_DOMAINS)
 
 
 class HaError(Exception):
@@ -274,6 +279,8 @@ class HaClient:
             unit = attributes.get("unit_of_measurement")
             include = False
             if kind in (None, "control") and domain in CONTROL_DOMAINS:
+                include = True
+            if kind == "state" and domain in STATE_DOMAINS:
                 include = True
             if kind in (None, "sensor", "price", "energy", "power") and domain == "sensor":
                 if kind == "price":

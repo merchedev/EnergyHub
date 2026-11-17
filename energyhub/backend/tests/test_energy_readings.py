@@ -185,3 +185,25 @@ async def test_fetch_month_energy_prefers_long_term_statistics() -> None:
     assert result.energy_kwh == 20.0
     assert result.hourly is not None
     assert abs(sum(result.hourly.values()) - 20.0) < 0.01
+
+
+async def test_fetch_month_energy_builds_hourly_from_history() -> None:
+    history = [
+        (datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc), 100.0),
+        (datetime(2026, 1, 1, 0, 30, tzinfo=timezone.utc), 105.0),
+        (datetime(2026, 1, 1, 1, 15, tzinfo=timezone.utc), 110.0),
+    ]
+    client = FakeHaClient(energy_state(), history)
+    result = await energy_readings.fetch_month_energy(
+        client,  # type: ignore[arg-type]
+        make_contract(),
+        "sensor.lavadora_energy",
+        2026,
+        1,
+        now=datetime(2026, 2, 15, tzinfo=timezone.utc),
+    )
+    assert result.error is None
+    assert result.energy_kwh == 10.0
+    assert result.hourly is not None
+    assert abs(sum(result.hourly.values()) - 10.0) < 0.01
+    assert len(result.hourly) == 2

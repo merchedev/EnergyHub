@@ -163,20 +163,20 @@ export function DeviceForm({
   useEffect(() => {
     if (!open || form.mode !== 'entity') return
     let cancelled = false
-    Promise.allSettled([api.haEntities('control'), api.haEntities('energy')]).then((results) => {
+    Promise.allSettled([api.haEntities('state'), api.haEntities('energy')]).then((results) => {
       if (cancelled) return
-      const [controlResult, energyResult] = results
-      const control =
-        controlResult.status === 'fulfilled'
-          ? controlResult.value
+      const [stateResult, energyResult] = results
+      const stateEntities =
+        stateResult.status === 'fulfilled'
+          ? stateResult.value
           : { configured: false, items: [] }
       const energy =
         energyResult.status === 'fulfilled'
           ? energyResult.value
           : { configured: false, items: [] }
-      setEntities(control.items)
+      setEntities(stateEntities.items)
       setEnergyEntities(energy.items)
-      setEntitiesConfigured(Boolean(control.configured || energy.configured))
+      setEntitiesConfigured(Boolean(stateEntities.configured || energy.configured))
     })
     return () => {
       cancelled = true
@@ -609,7 +609,7 @@ export function DeviceForm({
                   onChange={(value) => update('entity_id', value || null)}
                   emptyLabel="Sin entidad de estado"
                   placeholder="Buscar por nombre o entity_id…"
-                  hint="Entidades de control de Home Assistant"
+                  hint="Entidades de control o binarias de Home Assistant"
                 />
               </Field>
               <div className="form-grid">

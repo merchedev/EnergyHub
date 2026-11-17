@@ -1152,7 +1152,7 @@ async def create_recommendation_automation(rec_id: str, db: Session = Depends(ge
             status_code=400,
             detail="Home Assistant no está configurado. Copia el YAML y pégalo manualmente.",
         )
-    if rec.automation_kind == "turn_off" and not device.entity_id:
+    if rec.automation_kind == "turn_off" and not ha.is_controllable(device.entity_id):
         raise HTTPException(status_code=400, detail="El dispositivo no tiene una entidad de control")
     payload = _automation_payload(rec.automation_kind, device, rec)
     alias = payload["alias"]
